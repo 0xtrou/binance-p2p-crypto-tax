@@ -16,7 +16,7 @@ test("post-effective sell -> transfer bucket, Art. 5, 0.1% gross", () => {
   const r = buildDeclaration([sell(on, 1_000_000, 100)]);
   const s = r.rows.find((x) => x.side === "SELL")!;
   assert.equal(s.bucket, "transfer");
-  assert.equal(s.clause.id, "Art. 5");
+  assert.equal(s.clause.id, "Điều 5");
   assert.equal(s.taxOwed, 1000); // 1M * 0.1%
   assert.equal(s.unmatched, true); // no buy lot
 });
@@ -28,7 +28,7 @@ test("pre-effective sell -> other-income bucket, 10% net profit", () => {
   ]);
   const s = r.rows.find((x) => x.side === "SELL")!;
   assert.equal(s.bucket, "other-income");
-  assert.equal(s.clause.id, "PIT Law (thu nhập khác)");
+  assert.equal(s.clause.id, "Luật Thuế TNCN (thu nhập khác)");
   // netProfit = 1M - 500k = 500k; 10% = 50k.
   assert.equal(s.netProfit, 500_000);
   assert.equal(s.taxOwed, 50_000);

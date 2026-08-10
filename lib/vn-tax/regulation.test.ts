@@ -27,7 +27,7 @@ test("classifies an on-effective sell as taxable at 0.1%", () => {
   });
   assert.equal(c.bucket, "taxable");
   assert.equal(c.payment, 5000); // 5,000,000 * 0.001
-  assert.equal(c.clause.id, "Art. 5");
+  assert.equal(c.clause.id, "Điều 5");
   assert.match(c.reason, /0.1%/);
 });
 
@@ -38,7 +38,7 @@ test("taxable classification always cites Art. 5", () => {
     grossValue: 2300000,
   });
   assert.equal(c.bucket, "taxable");
-  assert.equal(c.clause.id, "Art. 5");
+  assert.equal(c.clause.id, "Điều 5");
   assert.equal(c.payment, 2300);
 });
 

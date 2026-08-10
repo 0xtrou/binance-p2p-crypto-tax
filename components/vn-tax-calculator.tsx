@@ -8,6 +8,7 @@ import { computeTax } from "@/lib/vn-tax/compute-tax";
 import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
 import { classifyTrade, CLAUSES } from "@/lib/vn-tax/regulation";
+import { S } from "@/lib/vn-tax/strings";
 
 const STORAGE_KEY = "vn-tax-crypto-sources";
 
@@ -108,13 +109,12 @@ export function VnTaxCalculator() {
     <main className="min-h-screen bg-[#071018] text-[#cfd9e3] terminal-shell">
       <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
         <header className="mb-6">
-          <p className="terminal-label mb-2">VN TAX / CRYPTO</p>
+          <p className="terminal-label mb-2">{S.badge}</p>
           <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-white sm:text-4xl">
-            Crypto Tax Estimator
+            {S.title}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[#8aa0b5]">
-            Add your Remitano + Binance CSV exports. Estimates VN PIT under Circular 32/2026/TT-BTC
-            (0.1% transfer tax) and general PIT (10% other income). Data persists in your browser only.
+            {S.subtitle}
           </p>
         </header>
 
@@ -122,31 +122,31 @@ export function VnTaxCalculator() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <SourcePanel
-            title="Remitano CSV"
+            title={S.remitanoCsv}
             accent="#67a9f5"
             value={sources.remitano}
             onChange={(v) => setSource("remitano", v)}
             onUpload={onFile("remitano")}
             onClear={() => clearSource("remitano")}
-            placeholder="Paste Remitano trade export CSV here…"
+            placeholder={S.remitanoPlaceholder}
             parsed={result?.perSource.remitano ?? null}
           />
           <SourcePanel
-            title="Binance CSV"
+            title={S.binanceCsv}
             accent="#f0c97a"
             value={sources.binance}
             onChange={(v) => setSource("binance", v)}
             onUpload={onFile("binance")}
             onClear={() => clearSource("binance")}
             onSample={() => setSource("binance", SAMPLE_BINANCE)}
-            placeholder="Paste Binance Order/Trade/P2P History CSV here…"
+            placeholder={S.binancePlaceholder}
             parsed={result?.perSource.binance ?? null}
           />
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
           <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-            {totalRows > 0 ? `${totalRows} row(s) loaded` : "No data"}
+            {totalRows > 0 ? `${totalRows} ${S.rowsLoaded}` : S.noData}
           </span>
           {totalRows > 0 ? (
             <button
@@ -154,11 +154,11 @@ export function VnTaxCalculator() {
               onClick={clearAll}
               className="terminal-icon-button inline-flex items-center gap-2 text-[#aab9c8]"
             >
-              <Trash2 size={13} /> Clear all
+              <Trash2 size={13} /> {S.clearAll}
             </button>
           ) : null}
           <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#4d6478]">
-            persisted locally
+            {S.persistedLocally}
           </span>
         </div>
 
@@ -170,7 +170,7 @@ export function VnTaxCalculator() {
           />
         ) : (
           <p className="mt-6 px-1 text-xs text-[#6c8094]">
-            No data yet. Paste a CSV or load the sample to begin.
+            {S.noDataPrompt}
           </p>
         )}
       </div>
@@ -206,10 +206,10 @@ function SourcePanel({
           {title}
         </label>
         <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-          {lineCount > 0 ? `${lineCount} lines` : "empty"}
+          {lineCount > 0 ? `${lineCount} ${S.lines}` : S.empty}
           {fmt ? ` · ${fmt}` : ""}
-          {tradeCount > 0 ? ` · ${tradeCount} trades` : ""}
-          {skipCount > 0 ? ` · ${skipCount} skipped` : ""}
+          {tradeCount > 0 ? ` · ${tradeCount} ${S.trades}` : ""}
+          {skipCount > 0 ? ` · ${skipCount} ${S.skipped}` : ""}
         </span>
       </div>
       <textarea
@@ -227,7 +227,7 @@ function SourcePanel({
       />
       <div className="flex flex-wrap items-center gap-2 border-t border-[#1b2d3e] px-4 py-2 text-xs">
         <label className="terminal-icon-button inline-flex cursor-pointer items-center gap-1.5 text-[#aab9c8]">
-          <FileUp size={12} /> Upload
+          <FileUp size={12} /> {S.upload}
           <input
             type="file"
             accept=".csv,text/csv"
@@ -245,7 +245,7 @@ function SourcePanel({
             onClick={onSample}
             className="terminal-icon-button inline-flex items-center gap-1.5 text-[#aab9c8]"
           >
-            <FileUp size={12} /> Sample
+            <FileUp size={12} /> {S.sample}
           </button>
         ) : null}
         {value ? (
@@ -254,7 +254,7 @@ function SourcePanel({
             onClick={onClear}
             className="terminal-icon-button inline-flex items-center gap-1.5 text-[#aab9c8]"
           >
-            <Trash2 size={12} /> Clear
+            <Trash2 size={12} /> {S.clear}
           </button>
         ) : null}
       </div>
@@ -266,14 +266,10 @@ function Disclaimer() {
   return (
     <aside className="border border-[#3a2c12] bg-[#15110a] px-4 py-3 text-xs leading-relaxed text-[#d8b870]">
       <p className="mb-1 flex items-center gap-2 font-semibold text-[#f0c97a]">
-        <AlertTriangle size={14} /> Estimate only — not tax advice
+        <AlertTriangle size={14} /> {S.disclaimerTitle}
       </p>
       <p className="text-[#c2a05a]">
-        Computed under Circular 32/2026/TT-BTC Art. 5 (0.1% PIT on transfer price), the interim
-        securities-analog rule from Resolution 05/2025/NQ-CP. This rate is written for transfers
-        through <em>licensed</em> VN crypto asset service providers; Binance may not yet qualify, so
-        actual liability may differ. Only sells dated on/after 27 Mar 2026 are counted; earlier
-        sells fall in a pre-pilot grey zone. Verify with a VN tax advisor before filing.
+        {S.disclaimerBody}
       </p>
     </aside>
   );
@@ -301,11 +297,11 @@ function Results({
     return (
       <section className="mt-6 border border-[#3a2c12] bg-[#15110a] px-4 py-3 text-xs text-[#f0c97a]">
         <p className="flex items-center gap-2 font-semibold">
-          <AlertTriangle size={14} /> Unrecognized CSV format
+          <AlertTriangle size={14} /> Không nhận dạng được định dạng CSV
         </p>
         <p className="mt-1 text-[#c2a05a]">
-          Expected a Binance Order/Trade/P2P History or Remitano export. All
-          {" "}{parsed.skipped.length} body row(s) were skipped.
+          Yêu cầu dữ liệu xuất Binance Order/Trade/P2P History hoặc Remitano. Đã bỏ qua
+          {" "}{parsed.skipped.length} dòng.
         </p>
       </section>
     );
@@ -314,16 +310,16 @@ function Results({
   return (
     <section className="mt-6 space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card label="Total PIT" value={formatAmount(decl.totals.totalTax, "VND")} accent />
-        <Card label="Transfer 0.1%" value={formatAmount(decl.totals.transferTax, "VND")} />
-        <Card label="Other income 10%" value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
-        <Card label="Unmatched sells" value={String(decl.totals.unmatchedCount)} />
+        <Card label={S.totalPit} value={formatAmount(decl.totals.totalTax, "VND")} accent />
+        <Card label={S.transfer01} value={formatAmount(decl.totals.transferTax, "VND")} />
+        <Card label={S.otherIncome10} value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
+        <Card label={S.unmatchedSells} value={String(decl.totals.unmatchedCount)} />
       </div>
 
       <Tabs
         tabs={[
           {
-            label: "Declaration",
+            label: S.tabDeclaration,
             content: (
               <div className="space-y-4">
                 <Explanation result={result} />
@@ -337,7 +333,7 @@ function Results({
             ),
           },
           {
-            label: "Breakdown",
+            label: S.tabBreakdown,
             content: (
               <div className="space-y-4">
                 <ComplianceTable result={result} />
@@ -345,13 +341,13 @@ function Results({
                   <Collapsible
                     open={showSkipped}
                     onToggle={() => setShowSkipped(!showSkipped)}
-                    label={`Skipped rows (${parsed.skipped.length})`}
+                    label={`${S.skipped} (${parsed.skipped.length})`}
                   >
                     <div className="border border-[#1b2d3e] bg-[#0a1622]">
                       {parsed.skipped.map((s) => (
                         <div key={s.rowIndex} className="border-b border-[#13212e] px-4 py-2 last:border-b-0">
                           <p className="font-[family-name:var(--font-mono)] text-[11px] text-[#ff8972]">
-                            row {s.rowIndex} — {s.reason}{ "source" in s ? ` [${(s as { source: string }).source}]` : ""}
+                            dòng {s.rowIndex} — {s.reason}{ "source" in s ? ` [${(s as { source: string }).source}]` : ""}
                           </p>
                           <pre className="mt-1 overflow-x-auto font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
                             {JSON.stringify(s.raw)}
@@ -457,18 +453,18 @@ function ComplianceTable({
 
   return (
     <div>
-      <h2 className="terminal-label mb-2">Compliance table — per-trade clause matching</h2>
+      <h2 className="terminal-label mb-2">{S.complianceTitle}</h2>
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
             <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
-              <th>Date</th>
-              <th>Pair</th>
-              <th>Side</th>
-              <th className="text-right">Gross</th>
-              <th>Classification</th>
-              <th>Clause</th>
-              <th className="text-right">Tax owed</th>
+              <th>{S.date}</th>
+              <th>{S.pair}</th>
+              <th>{S.side}</th>
+              <th className="text-right">{S.gross}</th>
+              <th>{S.classification}</th>
+              <th>{S.clause}</th>
+              <th className="text-right">{S.taxOwed}</th>
             </tr>
           </thead>
           <tbody>
@@ -479,16 +475,16 @@ function ComplianceTable({
                   <td className="whitespace-nowrap font-[family-name:var(--font-mono)] text-[11px] text-[#8aa0b5]">{formatDate(t.date)}</td>
                   <td className="whitespace-nowrap font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">{t.pair}</td>
                   <td className="whitespace-nowrap font-[family-name:var(--font-mono)] text-[11px]">
-                    <span className={t.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{t.side}</span>
+                    <span className={t.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{t.side === "SELL" ? S.sell : S.buy}</span>
                   </td>
                   <td className="text-right font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">{formatAmount(t.grossValue, t.quote)}</td>
                   <td className="text-[#a9b8c7]">
-                    <span className={bucketColor(c.bucket)}>{c.bucket}</span>
+                    <span className={bucketColor(c.bucket)}>{bucketLabel(c.bucket)}</span>
                     <span className="block text-[10px] text-[#6c8094]">{c.reason}</span>
                   </td>
                   <td className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
                     {c.clause.id}
-                    <span className="block">{c.clause.instrument.replace("Circular 32/2026/TT-BTC (Bộ Tài chính)", "TT 32/2026")}</span>
+                    <span className="block">{c.clause.instrument.replace("Thông tư số 32/2026/TT-BTC (Bộ Tài chính)", "TT 32/2026")}</span>
                   </td>
                   <td className="text-right font-[family-name:var(--font-mono)] text-[11px]">
                     {c.payment > 0 ? (
@@ -503,7 +499,7 @@ function ComplianceTable({
           </tbody>
           <tfoot>
             <tr className="border-t border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-              <td colSpan={6} className="text-right text-[#8aa0b5]">Total tax owed</td>
+              <td colSpan={6} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
               <td className="text-right text-[#76e1b0]">{formatAmount(totalPayment, totalQuote)}</td>
             </tr>
           </tfoot>
@@ -581,114 +577,82 @@ function Explanation({ result }: ExplanationProps) {
         className="flex w-full items-center gap-2 border border-[#1b2d3e] bg-[#0a1622] px-4 py-2 text-left text-xs font-semibold text-[#8aa0b5]"
       >
         <BookOpen size={13} />
-        How this is computed + regulation clauses
+        {S.howComputed}
         {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
       </button>
       {open ? (
         <div className="mt-2 space-y-4 border border-[#1b2d3e] bg-[#0a1622] px-4 py-4 text-xs leading-relaxed text-[#a9b8c7]">
           <section>
-            <h3 className="terminal-label mb-2">Two buckets, two formulas</h3>
+            <h3 className="terminal-label mb-2">{S.twoBuckets}</h3>
             <p className="mb-2 text-[#8aa0b5]">
-              Each SELL is assigned one bucket based on its date. Buys are not taxed (acquisitions).
+              {S.bucketAssignmentRule}
             </p>
             <div className="space-y-3">
               <div className="border-l-2 border-[#76e1b0] pl-3">
-                <p className="font-semibold text-[#76e1b0]">Transfer 0.1% — sells on/after 27 Mar 2026</p>
+                <p className="font-semibold text-[#76e1b0]">{S.transferBucketTitle}</p>
                 <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
-                  tax = gross transfer price × 0.001
+                  {S.transferFormula}
                 </p>
                 {firstTransfer ? (
                   <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                    e.g. {formatDate(firstTransfer.date)} {firstTransfer.pair}:{" "}
-                    {formatAmount(firstTransfer.gross, "VND")} × 0.001 ={" "}
+                    vd {formatDate(firstTransfer.date)} {firstTransfer.pair}:{" "}
+                    {formatAmount(firstTransfer.gross, "VND")} × 0,001 ={" "}
                     {formatAmount(firstTransfer.taxOwed, "VND")}
                   </p>
                 ) : null}
                 <p className="mt-1 text-[10px] text-[#6c8094]">
-                  Base = gross, not profit. Whether Circular 32 reaches Binance/Remitano (foreign, unlicensed)
-                  is unsettled — see caveats below.
+                  {S.transferBucketNote}
                 </p>
               </div>
               <div className="border-l-2 border-[#f0c97a] pl-3">
-                <p className="font-semibold text-[#f0c97a]">Other income 10% — sells before 27 Mar 2026</p>
+                <p className="font-semibold text-[#f0c97a]">{S.otherBucketTitle}</p>
                 <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
-                  tax = max(0, gross − FIFO cost) × 0.1
+                  {S.otherFormula}
                 </p>
                 {firstOther ? (
                   <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                    e.g. {formatDate(firstOther.date)} {firstOther.pair}: ({formatAmount(firstOther.gross)} −{" "}
-                    {formatAmount(firstOther.matchedCost)}) × 0.1 = {formatAmount(firstOther.taxOwed, "VND")}
+                    vd {formatDate(firstOther.date)} {firstOther.pair}: ({formatAmount(firstOther.gross)} −{" "}
+                    {formatAmount(firstOther.matchedCost)}) × 0,1 = {formatAmount(firstOther.taxOwed, "VND")}
                   </p>
                 ) : null}
                 <p className="mt-1 text-[10px] text-[#6c8094]">
-                  Net-profit base. Requires matching buys; unmatched sells treat cost as 0 (overstates profit).
+                  {S.otherBucketNote}
                 </p>
               </div>
             </div>
           </section>
 
           <section className="border-t border-[#13212e] pt-3">
-            <h3 className="terminal-label mb-2">Clause mapping</h3>
+            <h3 className="terminal-label mb-2">{S.clauseMapping}</h3>
             <ul className="space-y-3">
-              <ClauseRow step="0.1% transfer rate (post 27 Mar 2026)" clause={CLAUSES.rate} />
-              <ClauseRow step="transfer price = gross value (interpretation)" clause={CLAUSES.base} />
-              <ClauseRow step="10% other income (pre-effective fallback)" clause={CLAUSES.otherIncome} />
-              <ClauseRow step="Circular 32 effective 27 Mar 2026, not retroactive" clause={CLAUSES.effectiveDate} />
-              <ClauseRow step="VAT exempt" clause={CLAUSES.vat} />
-              <ClauseRow step="interim securities-analog pilot" clause={CLAUSES.pilot} />
-              <ClauseRow step="business income 15-20% (alternative, >500M VND/yr)" clause={CLAUSES.bizRate} />
-              <ClauseRow step="unresolved: which bucket for sole-revenue traders?" clause={CLAUSES.bizCharacterization} />
+              <ClauseRow step="Thuế suất chuyển nhượng 0,1% (từ 27/03/2026)" clause={CLAUSES.rate} />
+              <ClauseRow step="Giá chuyển nhượng = tổng giá trị (cách hiểu)" clause={CLAUSES.base} />
+              <ClauseRow step="Thu nhập khác 10% (phương án dự phòng trước ngày hiệu lực)" clause={CLAUSES.otherIncome} />
+              <ClauseRow step="Thông tư 32 hiệu lực 27/03/2026, không hồi tố" clause={CLAUSES.effectiveDate} />
+              <ClauseRow step="Không chịu thuế GTGT" clause={CLAUSES.vat} />
+              <ClauseRow step="Quy định tạm thời tương tự chứng khoán (thí điểm)" clause={CLAUSES.pilot} />
+              <ClauseRow step="Thu nhập kinh doanh 15-20% (phân loại thay thế, >500 triệu/năm)" clause={CLAUSES.bizRate} />
+              <ClauseRow step="Chưa rõ: nhóm nào cho người giao dịch toàn thời gian?" clause={CLAUSES.bizCharacterization} />
             </ul>
           </section>
 
           <section className="border-t border-[#13212e] pt-3">
-            <h3 className="terminal-label mb-2">Honest caveats — read before relying on any number</h3>
+            <h3 className="terminal-label mb-2">{S.caveatsTitle}</h3>
             <ul className="list-disc space-y-1 pl-4 text-[#8aa0b5]">
-              <li>
-                <strong className="text-[#f0c97a]">Licensed-provider gap.</strong> Art. 5 taxes transfers
-                &quot;through a crypto asset service provider.&quot; Binance and Remitano are foreign platforms,
-                not licensed VN providers under the pilot. Whether the 0.1% legally applies to trades on them
-                is <strong className="text-[#cfd9e3]">unsettled</strong>. The tool computes it anyway because
-                it&apos;s the only quantified rate in VN law — but the number may not be legally owed.
-              </li>
-              <li>
-                <strong className="text-[#f0c97a]">Transfer price undefined.</strong> Circular 32 says
-                &quot;transfer price&quot; without defining it. The tool reads it as gross quote value
-                (securities analogy). A net-profit reading would change the number.
-              </li>
-              <li>
-                <strong className="text-[#f0c97a]">Other-income base unsettled.</strong> General PIT applies
-                10% to &quot;other income&quot; but the base (gross vs net vs presumptive) depends on how the
-                tax authority characterizes the activity. Tool uses FIFO net profit as a middle reading.
-              </li>
-              <li>
-                <strong className="text-[#f0c97a]">Business 15-20% is a range.</strong> PIT Law 2025 may apply
-                a progressive schedule instead of a flat band, depending on registration status. Tool shows
-                the band as a working estimate.
-              </li>
-              <li>
-                <strong className="text-[#f0c97a]">Cost basis depends on your full history.</strong> If your
-                CSV lacks buys for some sells, the tool treats those sells as zero-cost — overstating profit
-                and tax. Add your full acquisition ledger (spot, convert, deposits) for accuracy.
-              </li>
-              <li>
-                <strong className="text-[#f0c97a]">No buy-side tax.</strong> &quot;Transfer&quot; is read as
-                disposal/sale. Buys are acquisitions, not taxed. This reading is defensible but not explicit
-                in Circular 32.
-              </li>
-              <li>
-                <strong className="text-[#f0c97a]">Not legal advice.</strong> Confirm characterization + final
-                numbers with a licensed VN tax advisor before filing.
-              </li>
+              <li>{S.caveatLicensed}</li>
+              <li>{S.caveatPrice}</li>
+              <li>{S.caveatOtherBase}</li>
+              <li>{S.caveatBizRange}</li>
+              <li>{S.caveatCost}</li>
+              <li>{S.caveatNoBuyTax}</li>
+              <li>{S.caveatNotAdvice}</li>
             </ul>
           </section>
 
           <section className="border-t border-[#13212e] pt-3">
-            <h3 className="terminal-label mb-2">Out of scope</h3>
+            <h3 className="terminal-label mb-2">{S.outOfScopeTitle}</h3>
             <p className="text-[#8aa0b5]">
-              Individual PIT only. Domestic corporates: 20% CIT on net gains (Art. 4.1). Foreign corporates:
-              0.1% CIT on gross. Not handled: wallet-to-wallet transfers, staking, airdrops, futures, crypto-to-crypto
-              swaps — Circular 32 is silent on these.
+              {S.outOfScope}
             </p>
           </section>
         </div>
@@ -740,22 +704,22 @@ function PitDeclarationTable({
   return (
     <div>
       <h2 className="terminal-label mb-2 flex items-center gap-2">
-        <FileSpreadsheet size={13} /> PIT declaration — one row per trade, matched clause, VND owed
+        <FileSpreadsheet size={13} /> {S.declarationTitle}
       </h2>
 
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
             <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-medium">
-              <th>Date</th>
-              <th>Pair</th>
-              <th>Side</th>
-              <th className="text-right">Gross</th>
-              <th className="text-right">Cost (FIFO)</th>
-              <th className="text-right">Net</th>
-              <th>Bucket</th>
-              <th>Clause</th>
-              <th className="text-right">Tax owed</th>
+              <th>{S.date}</th>
+              <th>{S.pair}</th>
+              <th>{S.side}</th>
+              <th className="text-right">{S.gross}</th>
+              <th className="text-right">{S.costFifo}</th>
+              <th className="text-right">{S.net}</th>
+              <th>{S.bucket}</th>
+              <th>{S.clause}</th>
+              <th className="text-right">{S.taxOwed}</th>
             </tr>
           </thead>
           <tbody>
@@ -764,8 +728,8 @@ function PitDeclarationTable({
                 <td className="whitespace-nowrap text-[#8aa0b5]">{formatDate(r.date)}</td>
                 <td className="whitespace-nowrap text-[#cfd9e3]">{r.pair}</td>
                 <td className="whitespace-nowrap">
-                  <span className={r.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{r.side}</span>
-                  {r.unmatched ? <span className="ml-1 text-[#ff8972]" title="no matching buy in CSV">⚠</span> : null}
+                  <span className={r.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{r.side === "SELL" ? S.sell : S.buy}</span>
+                  {r.unmatched ? <span className="ml-1 text-[#ff8972]" title="không có lệnh mua khớp trong CSV">⚠</span> : null}
                 </td>
                 <td className="text-right text-[#cfd9e3]">{formatAmount(r.gross, "VND")}</td>
                 <td className="text-right text-[#8aa0b5]">{r.side === "SELL" ? formatAmount(r.matchedCost, "VND") : "—"}</td>
@@ -782,7 +746,7 @@ function PitDeclarationTable({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#1b2d3e] bg-[#0d1924] [&>td]:px-2 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-              <td colSpan={8} className="text-right text-[#8aa0b5]">Total PIT to declare</td>
+              <td colSpan={8} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
               <td className="text-right text-[#76e1b0]">{formatAmount(decl.totals.totalTax, "VND")}</td>
             </tr>
           </tfoot>
@@ -795,7 +759,7 @@ function PitDeclarationTable({
           onClick={() => setShowAll(true)}
           className="terminal-icon-button mt-2 text-[#aab9c8]"
         >
-          <ChevronDown size={13} /> Show {hiddenCount} more trade{hiddenCount > 1 ? "s" : ""}
+          <ChevronDown size={13} /> {S.showMore} {hiddenCount} {S.moreTrades}
         </button>
       ) : showAll && decl.rows.length > 12 ? (
         <button
@@ -803,35 +767,32 @@ function PitDeclarationTable({
           onClick={() => setShowAll(false)}
           className="terminal-icon-button mt-2 text-[#aab9c8]"
         >
-          <ChevronUp size={13} /> Collapse
+          <ChevronUp size={13} /> {S.collapse}
         </button>
       ) : null}
 
       {decl.totals.unmatchedCount > 0 ? (
         <p className="mt-3 text-[10px] leading-relaxed text-[#ff8972]">
           <AlertTriangle size={11} className="mr-1 inline" />
-          {decl.totals.unmatchedCount} sell(s) have no matching buy in this CSV (⚠). Their cost basis is unknown —
-          tax shown treats them as zero-cost, which <strong>overstates net profit</strong>. Add your full
-          Binance spot + convert + deposit history for accurate figures.
+          {S.unmatchedWarn(decl.totals.unmatchedCount)}
         </p>
       ) : null}
 
       {decl.businessNotes.length > 0 ? (
         <div className="mt-3 border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-[11px] text-[#f0c97a]">
           <p className="mb-1 flex items-center gap-1 font-semibold">
-            <AlertTriangle size={11} /> Alternative characterization — business income (thu nhập từ kinh doanh)
+            <AlertTriangle size={11} /> {S.bizNoteTitle}
           </p>
           <p className="mb-2 text-[#c2a05a]">
-            If your trading is characterized as a business, years above 500M VND revenue face 15-20% on net profit
-            instead of the per-trade buckets above. Annual, not per-trade.
+            {S.bizNoteBody}
           </p>
           <table className="w-full text-left font-[family-name:var(--font-mono)] text-[10px]">
             <thead className="text-[#c2a05a]">
               <tr>
-                <th className="py-1">Year</th>
-                <th className="text-right">Revenue</th>
-                <th className="text-right">Net profit</th>
-                <th className="text-right">PIT 15-20%</th>
+                <th className="py-1">Năm</th>
+                <th className="text-right">Doanh thu</th>
+                <th className="text-right">Lợi nhuận ròng</th>
+                <th className="text-right">TNCN 15-20%</th>
               </tr>
             </thead>
             <tbody className="text-[#f0c97a]">
@@ -846,16 +807,13 @@ function PitDeclarationTable({
             </tbody>
           </table>
           <p className="mt-2 text-[10px] text-[#c2a05a]">
-            <strong>CSV-only cost basis.</strong> Same unmatched-sell caveat applies — overstated if you have
-            buys outside this export.
+            {S.bizNoteCsvOnly}
           </p>
         </div>
       ) : null}
 
       <p className="mt-3 text-[10px] leading-relaxed text-[#6c8094]">
-        <strong className="text-[#f0c97a]">Estimate, not filing advice.</strong> Bucket assignment: post-27-Mar-2026
-        sells → transfer 0.1% (Circular 32 Art. 5, if it reaches your platform); pre-effective sells → other income
-        10% (general PIT fallback). Which applies depends on your legal characterization — confirm with a VN tax advisor.
+        {S.estNotFiling}
       </p>
     </div>
   );
@@ -863,9 +821,11 @@ function PitDeclarationTable({
 
 function bucketLabel(bucket: string): string {
   switch (bucket) {
-    case "transfer": return "Transfer 0.1%";
-    case "other-income": return "Other 10%";
-    case "buy": return "Buy";
+    case "transfer": return S.bucketTransfer;
+    case "other-income": return S.bucketOther;
+    case "buy": return S.buy;
+    case "taxable": return S.bucketTransfer;
+    case "grey-zone": return S.bucketOther;
     default: return bucket;
   }
 }
