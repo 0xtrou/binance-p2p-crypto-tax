@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, BookOpen, Download, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { buildDeclaration } from "@/lib/vn-tax/declaration";
 import { exportComplianceCsv, exportComplianceXlsx, exportDeclarationCsv, exportDeclarationXlsx } from "@/lib/vn-tax/export";
 import { computeTax } from "@/lib/vn-tax/compute-tax";
@@ -9,43 +9,100 @@ import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
 import { classifyTrade, CLAUSES } from "@/lib/vn-tax/regulation";
 
-// Sample uses Binance P2P History format (the format the user exports).
-// Native VND pricing, so tax output is directly in VND — no FX needed.
-const SAMPLE_CSV = [
+const STORAGE_KEY = "vn-tax-crypto-sources";
+
+interface Sources {
+  remitano: string;
+  binance: string;
+}
+
+const EMPTY_SOURCES: Sources = { remitano: "", binance: "" };
+
+function loadSources(): Sources {
+  if (typeof window === "undefined") return EMPTY_SOURCES;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return EMPTY_SOURCES;
+    const parsed = JSON.parse(raw);
+    return {
+      remitano: typeof parsed.remitano === "string" ? parsed.remitano : "",
+      binance: typeof parsed.binance === "string" ? parsed.binance : "",
+    };
+  } catch {
+    return EMPTY_SOURCES;
+  }
+}
+
+const SAMPLE_BINANCE = [
   "Order Number,Order Type,Asset,Fiat Type,Total Price,Price,Quantity,Exchange rate,Maker Fee,Taker Fee,Counterparty,Status,Created Time",
-  // Pre-pilot buy (Jan 2026) — not taxed either way.
   "22919067578433670001,Buy,USDT,VND,2300000,26426,87.03,,,0.08,GiaoDichTuDong_247,Completed,2026-01-15 09:30:00",
-  // Pre-pilot sell (Mar 26 2026) — before Circular 32 effective; grey zone, $0 tax.
   "22919067578433670002,Sell,USDT,VND,2400000,27586,87.03,,,0.08,GiaoDichTuDong_247,Completed,2026-03-26 11:00:00",
-  // Taxable sell (Apr 2 2026) — on/after 27 Mar 2026; 0.1% PIT on 5,000,000 VND.
   "22919067578433670003,Sell,USDT,VND,5000000,28000,178.57,,,0.08,GiaoDichTuDong_247,Completed,2026-04-02 16:45:00",
 ].join("\n");
 
 export function VnTaxCalculator() {
-  const [csv, setCsv] = useState("");
-  const [fileName, setFileName] = useState<string | null>(null);
+  // Client-only lazy init avoids SSR/CSR mismatch + effect-setState lint.
+  const [sources, setSources] = useState<Sources>(() => (typeof window === "undefined" ? EMPTY_SOURCES : loadSources()));
   const [showSkipped, setShowSkipped] = useState(false);
 
-  const result = useMemo(() => {
-    if (csv.trim() === "") return null;
-    const parsed = parseBinanceCsv(csv);
-    return { parsed, tax: computeTax(parsed.trades) };
-  }, [csv]);
+  // Persist on change.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sources));
+    } catch {
+      // Quota or privacy mode — ignore.
+    }
+  }, [sources]);
 
-  const onFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      setCsv(String(reader.result ?? ""));
-      setFileName(file.name);
+  // Parse each source independently; concat trades for unified declaration.
+  const result = useMemo(() => {
+    const parsedResults = {
+      remitano: sources.remitano.trim() ? parseBinanceCsv(sources.remitano) : null,
+      binance: sources.binance.trim() ? parseBinanceCsv(sources.binance) : null,
     };
+    const hasAny = parsedResults.remitano || parsedResults.binance;
+    if (!hasAny) return null;
+
+    const trades = [
+      ...(parsedResults.remitano?.trades ?? []),
+      ...(parsedResults.binance?.trades ?? []),
+    ];
+    const skipped = [
+      ...(parsedResults.remitano?.skipped ?? []),
+      ...(parsedResults.binance?.skipped ?? []),
+    ];
+    // Tag source on each skipped row for clarity.
+    const skippedTagged = skipped.map((s, i) => ({
+      ...s,
+      rowIndex: i + 1,
+      source: (i < (parsedResults.remitano?.skipped.length ?? 0) ? "Remitano" : "Binance") as string,
+    }));
+
+    const parsed = { trades, skipped: skippedTagged, format: null as null };
+    return { parsed, tax: computeTax(trades), perSource: parsedResults };
+  }, [sources]);
+
+  const setSource = (key: keyof Sources, value: string) => {
+    setSources((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const onFile = (key: keyof Sources) => (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => setSource(key, String(reader.result ?? ""));
     reader.readAsText(file);
   };
 
-  const clear = () => {
-    setCsv("");
-    setFileName(null);
+  const clearSource = (key: keyof Sources) => {
+    setSources((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const clearAll = () => {
+    setSources(EMPTY_SOURCES);
     setShowSkipped(false);
   };
+
+  const totalRows = (sources.remitano.trim() ? sources.remitano.split(/\r?\n/).length - 1 : 0)
+    + (sources.binance.trim() ? sources.binance.split(/\r?\n/).length - 1 : 0);
 
   return (
     <main className="min-h-screen bg-[#071018] text-[#cfd9e3] terminal-shell">
@@ -56,68 +113,54 @@ export function VnTaxCalculator() {
             Crypto Tax Estimator
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[#8aa0b5]">
-            Paste a Binance Order or Trade History export. Estimates the 0.1% personal income tax
-            under Circular 32/2026/TT-BTC for sells dated on/after 27 Mar 2026.
+            Add your Remitano + Binance CSV exports. Estimates VN PIT under Circular 32/2026/TT-BTC
+            (0.1% transfer tax) and general PIT (10% other income). Data persists in your browser only.
           </p>
         </header>
 
         <Disclaimer />
 
-        <section className="mt-6 border border-[#1b2d3e] bg-[#0a1622]">
-          <label className="terminal-label block px-4 pt-3">CSV input</label>
-          <textarea
-            value={csv}
-            onChange={(e) => {
-              setCsv(e.target.value);
-              setFileName(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const f = e.dataTransfer.files[0];
-              if (f) onFile(f);
-            }}
-            onDragOver={(e) => e.preventDefault()}
-            placeholder="Paste Binance (Order/Trade/P2P History) or Remitano CSV here, or drop a .csv file…"
-            spellCheck={false}
-            className="block h-48 w-full resize-y bg-transparent px-4 py-3 font-[family-name:var(--font-mono)] text-xs leading-relaxed text-[#cfd9e3] placeholder:text-[#4d6478] focus:outline-none"
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <SourcePanel
+            title="Remitano CSV"
+            accent="#67a9f5"
+            value={sources.remitano}
+            onChange={(v) => setSource("remitano", v)}
+            onUpload={onFile("remitano")}
+            onClear={() => clearSource("remitano")}
+            placeholder="Paste Remitano trade export CSV here…"
+            parsed={result?.perSource.remitano ?? null}
           />
-          <div className="flex flex-wrap items-center gap-3 border-t border-[#1b2d3e] px-4 py-3 text-xs">
+          <SourcePanel
+            title="Binance CSV"
+            accent="#f0c97a"
+            value={sources.binance}
+            onChange={(v) => setSource("binance", v)}
+            onUpload={onFile("binance")}
+            onClear={() => clearSource("binance")}
+            onSample={() => setSource("binance", SAMPLE_BINANCE)}
+            placeholder="Paste Binance Order/Trade/P2P History CSV here…"
+            parsed={result?.perSource.binance ?? null}
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+          <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
+            {totalRows > 0 ? `${totalRows} row(s) loaded` : "No data"}
+          </span>
+          {totalRows > 0 ? (
             <button
               type="button"
-              onClick={() => {
-                setCsv(SAMPLE_CSV);
-                setFileName(null);
-              }}
-              className="terminal-icon-button inline-flex items-center gap-2 border border-[#294052] bg-[#0c1a26] px-3 text-[#aab9c8]"
+              onClick={clearAll}
+              className="terminal-icon-button inline-flex items-center gap-2 text-[#aab9c8]"
             >
-              <FileUp size={13} /> Load sample
+              <Trash2 size={13} /> Clear all
             </button>
-            <label className="terminal-icon-button inline-flex cursor-pointer items-center gap-2 border border-[#294052] bg-[#0c1a26] px-3 text-[#aab9c8]">
-              <FileUp size={13} /> Upload .csv
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onFile(f);
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={clear}
-              className="terminal-icon-button inline-flex items-center gap-2 border border-[#294052] bg-[#0c1a26] px-3 text-[#aab9c8]"
-            >
-              <Trash2 size={13} /> Clear
-            </button>
-            {fileName ? (
-              <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                {fileName}
-              </span>
-            ) : null}
-          </div>
-        </section>
+          ) : null}
+          <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#4d6478]">
+            persisted locally
+          </span>
+        </div>
 
         {result ? (
           <Results
@@ -132,6 +175,90 @@ export function VnTaxCalculator() {
         )}
       </div>
     </main>
+  );
+}
+
+interface SourcePanelProps {
+  title: string;
+  accent: string;
+  value: string;
+  onChange: (v: string) => void;
+  onUpload: (file: File) => void;
+  onClear: () => void;
+  onSample?: () => void;
+  placeholder: string;
+  parsed: ReturnType<typeof parseBinanceCsv> | null;
+}
+
+function SourcePanel({
+  title, accent, value, onChange, onUpload, onClear, onSample, placeholder, parsed,
+}: SourcePanelProps) {
+  const lineCount = value.trim() ? value.trim().split(/\r?\n/).length : 0;
+  const tradeCount = parsed?.trades.length ?? 0;
+  const skipCount = parsed?.skipped.length ?? 0;
+  const fmt = parsed?.format;
+
+  return (
+    <section className="border border-[#1b2d3e] bg-[#0a1622]">
+      <div className="flex items-center justify-between px-4 pt-3">
+        <label className="terminal-label flex items-center gap-2">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: accent }} />
+          {title}
+        </label>
+        <span className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
+          {lineCount > 0 ? `${lineCount} lines` : "empty"}
+          {fmt ? ` · ${fmt}` : ""}
+          {tradeCount > 0 ? ` · ${tradeCount} trades` : ""}
+          {skipCount > 0 ? ` · ${skipCount} skipped` : ""}
+        </span>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onDrop={(e) => {
+          e.preventDefault();
+          const f = e.dataTransfer.files[0];
+          if (f) onUpload(f);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        placeholder={placeholder}
+        spellCheck={false}
+        className="block h-40 w-full resize-y bg-transparent px-4 py-3 font-[family-name:var(--font-mono)] text-[11px] leading-relaxed text-[#cfd9e3] placeholder:text-[#4d6478] focus:outline-none"
+      />
+      <div className="flex flex-wrap items-center gap-2 border-t border-[#1b2d3e] px-4 py-2 text-xs">
+        <label className="terminal-icon-button inline-flex cursor-pointer items-center gap-1.5 text-[#aab9c8]">
+          <FileUp size={12} /> Upload
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onUpload(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {onSample ? (
+          <button
+            type="button"
+            onClick={onSample}
+            className="terminal-icon-button inline-flex items-center gap-1.5 text-[#aab9c8]"
+          >
+            <FileUp size={12} /> Sample
+          </button>
+        ) : null}
+        {value ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="terminal-icon-button inline-flex items-center gap-1.5 text-[#aab9c8]"
+          >
+            <Trash2 size={12} /> Clear
+          </button>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -153,7 +280,11 @@ function Disclaimer() {
 }
 
 interface ResultsProps {
-  result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
+  result: {
+    parsed: ReturnType<typeof parseBinanceCsv>;
+    tax: ReturnType<typeof computeTax>;
+    perSource: { remitano: ReturnType<typeof parseBinanceCsv> | null; binance: ReturnType<typeof parseBinanceCsv> | null };
+  };
   showSkipped: boolean;
   setShowSkipped: (v: boolean) => void;
 }
@@ -220,7 +351,7 @@ function Results({
                       {parsed.skipped.map((s) => (
                         <div key={s.rowIndex} className="border-b border-[#13212e] px-4 py-2 last:border-b-0">
                           <p className="font-[family-name:var(--font-mono)] text-[11px] text-[#ff8972]">
-                            row {s.rowIndex} — {s.reason}
+                            row {s.rowIndex} — {s.reason}{ "source" in s ? ` [${(s as { source: string }).source}]` : ""}
                           </p>
                           <pre className="mt-1 overflow-x-auto font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
                             {JSON.stringify(s.raw)}
