@@ -17,7 +17,7 @@ export const S = {
   lines: "dòng",
   trades: "giao dịch",
   skipped: "bỏ qua",
-  upload: "Tải lên",
+  upload: "Thêm file",
   sample: "Mẫu",
   clear: "Xóa",
   clearAll: "Xóa tất cả",

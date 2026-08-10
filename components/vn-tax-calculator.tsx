@@ -99,7 +99,19 @@ export function VnTaxCalculator() {
 
   const onFile = (key: keyof Sources) => (file: File) => {
     const reader = new FileReader();
-    reader.onload = () => setSource(key, String(reader.result ?? ""));
+    reader.onload = () => {
+      const content = String(reader.result ?? "");
+      setSources((prev) => {
+        const existing = prev[key];
+        // Append: nếu đã có dữ liệu, thêm nội dung mới xuống dưới.
+        // Nếu file mới có header trùng, bỏ header để tránh parse lỗi.
+        const newLines = content.split(/\r?\n/);
+        const isFirstLineHeader = /^[?Order Number|ref|Date\(UTC\)]/i.test(newLines[0] ?? "");
+        const body = isFirstLineHeader && existing.trim() ? newLines.slice(1).join("\n") : content;
+        const sep = existing.trim() ? "\n" : "";
+        return { ...prev, [key]: existing + sep + body };
+      });
+    };
     reader.readAsText(file);
   };
 
