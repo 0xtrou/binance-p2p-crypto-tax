@@ -114,9 +114,9 @@ export const S = {
   estNotFiling:
     "Ước tính, không phải tư vấn kê khai. Phân bổ nhóm: lệnh bán từ sau 27/03/2026 → chuyển nhượng 0,1% (Điều 5 Thông tư số 32, nếu áp dụng được cho nền tảng của bạn); lệnh bán trước ngày có hiệu lực → thu nhập khác 10% (phương án dự phòng theo thuế TNCN chung). Việc áp dụng mức nào phụ thuộc vào phân loại pháp lý của bạn — xác nhận với cố vấn thuế Việt Nam.",
 
-  // Unmatched warning (softened — asset gap, not parser bug)
+  // Unmatched warning — softened, honest
   unmatchedWarn: (n: number) =>
-    `${n} lệnh bán vượt số dư tài sản có được từ lệnh mua trong CSV. Phần chênh lệch có nguồn gốc ngoài file này (giao dịch spot, convert, gửi tiền từ ví khác). Thuế hiển thị cho các lệnh này tính với giá vốn = 0 — có thể làm phồng lợi nhuận. Nếu bạn có file giao dịch spot/convert, thêm vào để tính chính xác hơn.`,
+    `${n} lệnh bán không có lệnh mua khớp trong file CSV này (phần tài sản có nguồn gốc ngoài file — giao dịch spot, convert, gửi tiền từ ví khác). Các lệnh này không được tính vào lợi nhuận ròng và thuế thu nhập khác. Thuế chuyển nhượng 0,1% (nếu áp dụng) vẫn tính trên tổng giá trị giao dịch. Để tính thuế thu nhập khác chính xác, thêm file giao dịch spot/convert/deposit đầy đủ.`,
 
   // Asset flow table
   assetFlowTitle: "Dòng tiền theo tài sản — tổng mua/bán VND theo từng loại",

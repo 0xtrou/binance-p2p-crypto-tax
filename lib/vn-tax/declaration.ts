@@ -133,10 +133,18 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
         continue;
       }
 
-      // SELL: FIFO match.
+      // SELL: FIFO match against prior BUY lots of the same pair.
+      // VNDR is a 1:1 VND-pegged stablecoin (Remitano) — its "coin amount"
+      // equals its VND amount, so FIFO quantity matching is nonsensical
+      // (every lot and every sell is millions of units). For VNDR pairs,
+      // skip FIFO and treat cost = proceeds (profit = 0) since there is no
+      // price movement for a 1:1 stablecoin.
       let matchedCost = 0;
       let unmatched = false;
-      if (t.quantity === null) {
+      if (t.base === "VNDR") {
+        // 1:1 peg: cost basis = grossValue (no profit on the VND transfer).
+        matchedCost = t.grossValue;
+      } else if (t.quantity === null) {
         unmatched = true;
       } else {
         let remaining = t.quantity;
@@ -152,7 +160,7 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
       }
       if (unmatched) unmatchedCount.count++;
 
-      const netProfit = t.grossValue - matchedCost;
+      const netProfit = unmatched ? 0 : t.grossValue - matchedCost;
       const isPostEffective = t.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
 
       let bucket: DeclBucket;
