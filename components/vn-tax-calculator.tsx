@@ -755,7 +755,7 @@ function PitDeclarationTable({
                 <td className="whitespace-nowrap"><span className={bucketColor(r.bucket)}>{bucketLabel(r.bucket)}</span></td>
                 <td className="whitespace-nowrap text-[#6c8094]">{r.clause.id}</td>
                 <td className="text-right">
-                  {r.taxOwed > 0 ? <span className="text-[#76e1b0]">{formatAmount(r.taxOwed, "VND")}</span> : <span className="text-[#6c8094]">—</span>}
+                  {r.taxOwed > 0 ? <span className="text-[#76e1b0]">{formatAmount(r.taxOwed, "VND")}</span> : <span className="text-[#6c8094]">{r.side === "SELL" ? "0 VND" : "—"}</span>}
                 </td>
               </tr>
             ))}
