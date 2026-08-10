@@ -176,7 +176,7 @@ function Results({
   setShowSkipped,
 }: ResultsProps) {
   const { parsed, tax } = result;
-  const totalTax = quoteCurrencies.reduce((s, q) => s + tax.totalsByQuote[q].tax, 0);
+  const decl = useMemo(() => buildDeclaration(parsed.trades), [parsed]);
 
   if (parsed.format === null) {
     return (
@@ -195,10 +195,10 @@ function Results({
   return (
     <section className="mt-6 space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card label="Total est. tax" value={formatAmount(totalTax, mixedQuotes ? undefined : firstQuote)} accent />
-        <Card label="Taxable sells" value={String(tax.totals.taxableSellCount)} />
-        <Card label="Grey-zone trades" value={String(tax.totals.greyZoneCount)} />
-        <Card label="Skipped rows" value={String(parsed.skipped.length)} />
+        <Card label="Total PIT" value={formatAmount(decl.totals.totalTax, "VND")} accent />
+        <Card label="Transfer 0.1%" value={formatAmount(decl.totals.transferTax, "VND")} />
+        <Card label="Other income 10%" value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
+        <Card label="Unmatched sells" value={String(decl.totals.unmatchedCount)} />
       </div>
 
       {mixedQuotes ? (
@@ -525,13 +525,6 @@ function PitDeclarationTable({
       <h2 className="terminal-label mb-2 flex items-center gap-2">
         <FileSpreadsheet size={13} /> PIT declaration — one row per trade, matched clause, VND owed
       </h2>
-
-      <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card label="Total PIT owed" value={formatAmount(decl.totals.totalTax, "VND")} accent />
-        <Card label="Transfer 0.1%" value={formatAmount(decl.totals.transferTax, "VND")} />
-        <Card label="Other income 10%" value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
-        <Card label="Unmatched sells" value={String(decl.totals.unmatchedCount)} />
-      </div>
 
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
