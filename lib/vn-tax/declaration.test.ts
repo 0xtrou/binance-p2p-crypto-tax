@@ -46,13 +46,27 @@ test("Year summary: lợi nhuận ròng = bán - mua", () => {
   assert.equal(y.netVnd, 50_000_000);
 });
 
-test("Year summary: thuế thu nhập khác 10% trên lợi nhuận ròng dương", () => {
+test("Year summary: thuế thu nhập khác 10% trên lợi nhuận ròng dương (trên threshold 500tr)", () => {
+  // Doanh thu 600tr > 500tr threshold → chịu thuế.
+  const r = buildDeclaration([
+    buy("2024-01-01T00:00:00Z", 100_000_000),
+    sell("2024-06-01T00:00:00Z", 600_000_000),
+  ]);
+  const y = r.yearSummaries[0];
+  assert.equal(y.underThreshold, false);
+  // Lợi nhuận ròng = 600tr - 100tr = 500tr. 10% = 50tr.
+  assert.equal(y.otherIncomeTax, 50_000_000);
+});
+
+test("Year summary: dưới threshold 500tr → miễn thuế thu nhập khác", () => {
+  // Doanh thu 150tr ≤ 500tr → miễn (characterize hộ kinh doanh).
   const r = buildDeclaration([
     buy("2024-01-01T00:00:00Z", 100_000_000),
     sell("2024-06-01T00:00:00Z", 150_000_000),
   ]);
   const y = r.yearSummaries[0];
-  assert.equal(y.otherIncomeTax, 5_000_000);
+  assert.equal(y.underThreshold, true);
+  assert.equal(y.otherIncomeTax, 0);
 });
 
 test("Year summary: lỗ ròng → thuế thu nhập khác = 0", () => {

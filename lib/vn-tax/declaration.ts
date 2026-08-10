@@ -45,12 +45,20 @@ export interface YearSummary {
   boughtVnd: number;
   /** Lợi nhuận ròng = soldVnd - boughtVnd. */
   netVnd: number;
-  /** Thuế chuyển nhượng 0,1% trên tổng bán (chỉ từ 27/03/2026). */
+  /** Tổng VND bán TRƯỚC 27/03/2026 (chịu thuế thu nhập khác). */
+  preEffectiveSoldVnd: number;
+  /** Tổng VND mua TRƯỚC 27/03/2026. */
+  preEffectiveBoughtVnd: number;
+  /** Lợi nhuận ròng trước 27/03/2026. */
+  preEffectiveNetVnd: number;
+  /** Thuế chuyển nhượng 0,1% trên tổng bán TỪ 27/03/2026 (thuế chốt). */
   transferTax: number;
-  /** Thuế thu nhập khác 10% trên lợi nhuận ròng (nếu dương). */
+  /** Thuế thu nhập khác 10% trên lợi nhuận ròng TRƯỚC 27/03/2026 (nếu dương). */
   otherIncomeTax: number;
   /** Tổng thuế năm. */
   totalTax: number;
+  /** True nếu doanh thu năm ≤ 500 triệu VND (miễn thuế nếu characterize là kinh doanh). */
+  underThreshold: boolean;
 }
 
 export interface AssetFlow {
@@ -78,28 +86,50 @@ export interface DeclarationResult {
 }
 
 const OTHER_INCOME_RATE = 0.1;
+/** Threshold miễn thuế hộ kinh doanh: doanh thu ≤ 500 triệu VND/năm. */
+const BIZ_EXEMPTION_THRESHOLD = 500_000_000;
 
 /**
- * Xây tờ khai theo mô hình dòng tiền. Mỗi lệnh BÁN chịu thuế chuyển nhượng
- * 0,1% (sau 27/03/2026). Lợi nhuận ròng năm (bán - mua) chịu thuế thu nhập
- * khác 10% nếu dương. KHÔNG ghép lô FIFO.
+ * Xây tờ khai theo mô hình dòng tiền.
+ *
+ * TUÂN THỦ PHÁP LUẬT VN:
+ *
+ * 1. TỪ 27/03/2026: thuế chuyển nhượng 0,1% trên tổng giá trị bán — thuế CHỐT
+ *    (final). Không kê khai thuế thu nhập khác thêm trên phần này (tránh
+ *    double-count). Theo Điều 5 Thông tư 32/2026/TT-BTC.
+ *
+ * 2. TRƯỚC 27/03/2026: thuế thu nhập khác 10% trên lợi nhuận ròng năm
+ *    (bán - mua), nếu dương. Tính theo nguyên tắc quyết toán năm.
+ *    Nếu characterize là hộ kinh doanh: doanh thu ≤ 500 triệu VND/năm → miễn.
+ *
+ * 3. KHÔNG tính cả hai loại thuế trên cùng giao dịch — chọn 1 trong 2
+ *    theo ngày hiệu lực.
  */
 export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
   const rows: DeclarationRow[] = [];
-  const yearAgg = new Map<number, { soldVnd: number; boughtVnd: number }>();
+  const yearAgg = new Map<number, {
+    soldVnd: number;
+    boughtVnd: number;
+    /** Riêng cho phần trước 27/03/2026 (áp dụng thuế thu nhập khác). */
+    preSoldVnd: number;
+    preBoughtVnd: number;
+  }>();
   const assetMap = new Map<string, { boughtVnd: number; soldVnd: number }>();
 
   for (const t of trades) {
     const year = t.date.getUTCFullYear();
-    if (!yearAgg.has(year)) yearAgg.set(year, { soldVnd: 0, boughtVnd: 0 });
+    if (!yearAgg.has(year)) yearAgg.set(year, { soldVnd: 0, boughtVnd: 0, preSoldVnd: 0, preBoughtVnd: 0 });
     const ya = yearAgg.get(year)!;
 
     // Asset flow (group by base asset).
     if (!assetMap.has(t.base)) assetMap.set(t.base, { boughtVnd: 0, soldVnd: 0 });
     const af = assetMap.get(t.base)!;
 
+    const isPostEffective = t.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
+
     if (t.side === "BUY") {
       ya.boughtVnd += t.grossValue;
+      if (!isPostEffective) ya.preBoughtVnd += t.grossValue;
       af.boughtVnd += t.grossValue;
       rows.push({
         date: t.date,
@@ -116,21 +146,21 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
 
     // SELL — chịu thuế chuyển nhượng 0,1% nếu sau 27/03/2026.
     ya.soldVnd += t.grossValue;
+    if (!isPostEffective) ya.preSoldVnd += t.grossValue;
     af.soldVnd += t.grossValue;
-    const isPostEffective = t.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
 
     let taxOwed = 0;
     let bucket: DeclBucket;
     let clause: RegulationClause;
 
     if (isPostEffective) {
-      // Thuế chuyển nhượng 0,1% trên tổng giá trị giao dịch.
+      // TỪ 27/03/2026: thuế chuyển nhượng 0,1% trên tổng — THUẾ CHỐT.
+      // Không tính thuế thu nhập khác thêm (tránh double-count).
       taxOwed = roundCents(t.grossValue * PIT_RATE);
       bucket = "transfer";
       clause = CLAUSES.rate;
     } else {
-      // Trước 27/03/2026 — không có thuế chuyển nhượng. Thuế thu nhập khác
-      // 10% được tính theo NĂM (xem yearSummaries), không theo từng giao dịch.
+      // TRƯỚC 27/03/2026 — thuế thu nhập khác 10% tính theo NĂM.
       bucket = "other-income";
       clause = CLAUSES.otherIncome;
     }
@@ -150,24 +180,36 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
   // Sort newest-first.
   rows.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  // Year summaries — thuế thu nhập khác 10% trên lợi nhuận ròng năm.
+  // Year summaries — tách rõ thuế chuyển nhượng (chốt) vs thuế thu nhập khác.
   const yearSummaries: YearSummary[] = [];
   for (const [year, ya] of yearAgg) {
     const netVnd = ya.soldVnd - ya.boughtVnd;
-    // Thuế chuyển nhượng: chỉ tính trên các lệnh bán sau 27/03/2026 trong năm.
+    // Thuế chuyển nhượng 0,1%: chỉ bán TỪ 27/03/2026 — thuế chốt, không thêm.
     const transferTax = rows
       .filter((r) => r.bucket === "transfer" && r.date.getUTCFullYear() === year)
       .reduce((s, r) => s + r.taxOwed, 0);
-    // Thuế thu nhập khác 10% trên lợi nhuận ròng năm (nếu dương).
-    const otherIncomeTax = netVnd > 0 ? roundCents(netVnd * OTHER_INCOME_RATE) : 0;
+    // Thuế thu nhập khác 10%: chỉ trên phần TRƯỚC 27/03/2026, lợi nhuận ròng.
+    const preNetVnd = ya.preSoldVnd - ya.preBoughtVnd;
+    // Threshold: nếu doanh thu năm ≤ 500 triệu VND → miễn (characterize hộ kinh doanh).
+    const underThreshold = ya.soldVnd <= BIZ_EXEMPTION_THRESHOLD;
+    // Thuế thu nhập khác chỉ áp dụng nếu:
+    // - Lợi nhuận ròng (trước 27/03/2026) > 0
+    // - VÀ không dưới threshold (nếu characterize là kinh doanh)
+    const otherIncomeTax = preNetVnd > 0 && !underThreshold
+      ? roundCents(preNetVnd * OTHER_INCOME_RATE)
+      : 0;
     yearSummaries.push({
       year,
       soldVnd: roundCents(ya.soldVnd),
       boughtVnd: roundCents(ya.boughtVnd),
       netVnd: roundCents(netVnd),
+      preEffectiveSoldVnd: roundCents(ya.preSoldVnd),
+      preEffectiveBoughtVnd: roundCents(ya.preBoughtVnd),
+      preEffectiveNetVnd: roundCents(preNetVnd),
       transferTax,
       otherIncomeTax,
       totalTax: roundCents(transferTax + otherIncomeTax),
+      underThreshold,
     });
   }
   yearSummaries.sort((a, b) => a.year - b.year);
