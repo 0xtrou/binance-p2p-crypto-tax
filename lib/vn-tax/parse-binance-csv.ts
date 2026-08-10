@@ -121,11 +121,15 @@ const parseDateWithOffset = (raw: string): Date | null => {
 };
 
 const parseNumber = (raw: string): number => {
-  // Binance totals/prices ship as plain decimals (e.g. "2300000", "87.03");
-  // no thousands separators. Coerce directly so a stray comma can't split a cell.
+  // Binance totals/prices ship as plain decimals (e.g. "2300000", "87.03").
+  // Some Binance locale exports use comma decimals (e.g. "875881,55").
+  // If the string has a comma but no dot, treat comma as decimal separator.
   const trimmed = raw.trim();
   if (trimmed === "") return Number.NaN;
-  const n = Number(trimmed);
+  const normalized = trimmed.includes(",") && !trimmed.includes(".")
+    ? trimmed.replace(",", ".")
+    : trimmed;
+  const n = Number(normalized);
   return Number.isNaN(n) ? Number.NaN : n;
 };
 
