@@ -36,4 +36,4 @@ export interface ParseResult {
   format: CsvFormat | null;
 }
 
-export type CsvFormat = "order-history" | "trade-history" | "p2p-history";
+export type CsvFormat = "order-history" | "trade-history" | "p2p-history" | "remitano";

@@ -80,7 +80,7 @@ export function VnTaxCalculator() {
               if (f) onFile(f);
             }}
             onDragOver={(e) => e.preventDefault()}
-            placeholder="Paste Binance Order History, Trade History, or P2P History CSV here, or drop a .csv file…"
+            placeholder="Paste Binance (Order/Trade/P2P History) or Remitano CSV here, or drop a .csv file…"
             spellCheck={false}
             className="block h-48 w-full resize-y bg-transparent px-4 py-3 font-[family-name:var(--font-mono)] text-xs leading-relaxed text-[#cfd9e3] placeholder:text-[#4d6478] focus:outline-none"
           />
@@ -185,7 +185,7 @@ function Results({
           <AlertTriangle size={14} /> Unrecognized CSV format
         </p>
         <p className="mt-1 text-[#c2a05a]">
-          Expected a Binance Order History, Trade History, or P2P History export. All
+          Expected a Binance Order/Trade/P2P History or Remitano export. All
           {" "}{parsed.skipped.length} body row(s) were skipped.
         </p>
       </section>

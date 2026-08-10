@@ -51,6 +51,23 @@ const P2P_HISTORY_HEADERS = [
   "Created Time",
 ] as const;
 
+// Remitano trade export. Note: `payment details` is a multiline quoted field
+// (embedded newlines for bank_name, bank_account_name, etc.) — the RFC 4180
+// parser in parseCsv handles this. All exported rows are completed (no Status).
+const REMITANO_HEADERS = [
+  "ref",
+  "coin currency",
+  "buy or sell",
+  "seller username",
+  "buyer username",
+  "coin amount",
+  "fiat amount",
+  "created at",
+  "paid at",
+  "released at",
+  "payment details",
+] as const;
+
 const headersMatch = (line: string[], expected: readonly string[]): boolean =>
   line.length === expected.length &&
   line.every((cell, i) => cell.trim() === expected[i]);
@@ -86,6 +103,23 @@ const parseDateUtc = (raw: string): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+/** Parse a date with explicit timezone offset, e.g. Remitano's
+ *  "2024-09-30 08:11:38 +0700". Returns the corresponding UTC instant. */
+const parseDateWithOffset = (raw: string): Date | null => {
+  // Normalize the space between date and time to "T", then parse.
+  // "2024-09-30 08:11:38 +0700" -> "2024-09-30T08:11:38+07:00"
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})\s*([+-]\d{2})(\d{2})?$/.exec(raw.trim());
+  if (m) {
+    const [, yyyy, mm, dd, hh, mi, ss, offH, offM] = m;
+    const tz = `${offH}:${offM ?? "00"}`;
+    const d = new Date(`${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}${tz}`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  // Fallback: offset absent — try plain Date parse.
+  const d = new Date(raw.trim());
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 const parseNumber = (raw: string): number => {
   // Binance totals/prices ship as plain decimals (e.g. "2300000", "87.03");
   // no thousands separators. Coerce directly so a stray comma can't split a cell.
@@ -111,6 +145,9 @@ const detectFormat = (headerCells: string[]): FormatDef | null => {
   if (headersMatch(headerCells, P2P_HISTORY_HEADERS)) {
     return { format: "p2p-history", headers: P2P_HISTORY_HEADERS };
   }
+  if (headersMatch(headerCells, REMITANO_HEADERS)) {
+    return { format: "remitano", headers: REMITANO_HEADERS };
+  }
   return null;
 };
 
@@ -119,6 +156,9 @@ function parseRow(
   raw: Record<string, string>,
   format: CsvFormat,
 ): { trade: ParsedTrade } | { reason: string } {
+  // Remitano is structurally different — handle it separately for clarity.
+  if (format === "remitano") return parseRemitanoRow(raw);
+
   // Date column differs across formats.
   const dateCol = format === "p2p-history" ? "Created Time" : "Date(UTC)";
   const date = parseDateUtc(raw[dateCol]);
@@ -199,23 +239,82 @@ function parseRow(
   };
 }
 
-/** Parse a raw Binance CSV string into validated trades + a skipped audit. */
+/** Parse a Remitano trade row. Schema notes:
+ *  - `coin currency` = base (vndr/usdt/eth/btc). "vndr" = Remitano's VND-pegged
+ *    stablecoin; treated as base with quote VND for FIFO + tax.
+ *  - `buy or sell` = side (from the taxpayer's perspective).
+ *  - `fiat amount` = signed VND; abs() = grossValue.
+ *  - `coin amount` = signed base units; abs() = quantity.
+ *  - `released at` = settlement timestamp with +0700 offset (when crypto left).
+ *  - All exported rows are completed (no Status column).
+ *
+ *  Remitano is a foreign P2P platform — same licensed-provider gap as Binance.
+ *  Same tax treatment: other-income 10% fallback (pre-effective) or transfer
+ *  0.1% (post-effective, if Circular 32 reaches the platform).
+ */
+function parseRemitanoRow(raw: Record<string, string>): { trade: ParsedTrade } | { reason: string } {
+  // Settlement date = "released at" (crypto actually moved). Fall back to
+  // "created at" if released is blank.
+  const dateRaw = raw["released at"] || raw["created at"];
+  const date = parseDateWithOffset(dateRaw);
+  if (!date) return { reason: "invalid date" };
+
+  const side = (raw["buy or sell"] ?? "").toLowerCase().trim();
+  if (side !== "buy" && side !== "sell") return { reason: "unrecognized side" };
+
+  const coin = (raw["coin currency"] ?? "").toLowerCase().trim();
+  if (!/^[a-z0-9]+$/.test(coin)) return { reason: "unrecognized coin currency" };
+
+  // VNDR is Remitano's VND stablecoin. Map base/quote:
+  //   vndr -> base VNDR, quote VND (1:1, settled in VND)
+  //   usdt/eth/btc -> base <coin>, quote VND (fiat leg is VND)
+  const base = coin === "vndr" ? "VNDR" : coin.toUpperCase();
+  const quote = "VND";
+  const pair = `${base}${quote}`;
+
+  // Fiat amount is signed: positive for sells (received VND), negative for
+  // buys (spent VND). Gross value is always positive.
+  const fiatRaw = (raw["fiat amount"] ?? "").trim();
+  const fiat = parseNumber(fiatRaw);
+  if (Number.isNaN(fiat) || fiat === 0) return { reason: "invalid fiat amount" };
+  const grossValue = Math.abs(fiat);
+
+  // Coin amount is signed; absolute value is the quantity.
+  const coinRaw = (raw["coin amount"] ?? "").trim();
+  const coinAmt = parseNumber(coinRaw);
+  const quantity = Number.isNaN(coinAmt) || coinAmt === 0 ? null : Math.abs(coinAmt);
+
+  return {
+    trade: {
+      date,
+      pair,
+      base,
+      quote,
+      side: side.toUpperCase() as "BUY" | "SELL",
+      grossValue,
+      quantity,
+    },
+  };
+}
+
+/** Parse a raw CSV string into validated trades + a skipped audit.
+ *  Supports Binance (Order/Trade/P2P History) and Remitano trade exports. */
 export function parseBinanceCsv(input: string): ParseResult {
   const text = input.trim();
   if (text === "") return { trades: [], skipped: [], format: null };
 
-  const lines = splitCsvLines(text);
-  if (lines.length === 0) return { trades: [], skipped: [], format: null };
+  const records = parseCsv(text);
+  if (records.length === 0) return { trades: [], skipped: [], format: null };
 
-  const headerCells = splitCsvLine(lines[0]);
+  const headerCells = records[0];
   const detected = detectFormat(headerCells);
 
   const trades: ParsedTrade[] = [];
   const skipped: SkippedRow[] = [];
 
   if (!detected) {
-    for (let i = 1; i < lines.length; i++) {
-      const cells = splitCsvLine(lines[i]);
+    for (let i = 1; i < records.length; i++) {
+      const cells = records[i];
       if (cells.every((c) => c.trim() === "")) continue;
       skipped.push({
         rowIndex: i,
@@ -223,14 +322,14 @@ export function parseBinanceCsv(input: string): ParseResult {
           cells,
           headerCells.length ? headerCells : cells.map((_, idx) => `col${idx}`),
         ),
-        reason: "unrecognized CSV format — expected Binance Order History, Trade History, or P2P History",
+        reason: "unrecognized CSV format — expected Binance Order/Trade/P2P History or Remitano trades",
       });
     }
     return { trades, skipped, format: null };
   }
 
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitCsvLine(lines[i]);
+  for (let i = 1; i < records.length; i++) {
+    const cells = records[i];
     if (cells.every((c) => c.trim() === "")) continue;
     const raw = rowToObject(cells, detected.headers);
     const result = parseRow(raw, detected.format);
@@ -241,34 +340,70 @@ export function parseBinanceCsv(input: string): ParseResult {
   return { trades, skipped, format: detected.format };
 }
 
-/** Split a CSV blob into logical lines, dropping a trailing empty line. */
-function splitCsvLines(text: string): string[] {
-  return text
-    .split(/\r\n|\n|\r/)
-    .filter((l, i, arr) => !(i === arr.length - 1 && l.trim() === ""));
-}
-
-/** Split a single CSV line into cells, honoring double-quoted fields. */
-function splitCsvLine(line: string): string[] {
-  const cells: string[] = [];
-  let cur = "";
+/**
+ * RFC 4180 CSV parser. Returns one record (array of cells) per logical row.
+ * Handles quoted fields containing commas, newlines, and escaped ("") quotes.
+ * Replaces the older splitCsvLines + splitCsvLine pair, which broke on
+ * multiline quoted fields like Remitano's `payment details` column.
+ */
+function parseCsv(text: string): string[][] {
+  const records: string[][] = [];
+  let record: string[] = [];
+  let field = "";
   let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
     if (inQuotes) {
       if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
+        if (text[i + 1] === '"') {
+          // Escaped quote inside quoted field.
+          field += '"';
           i++;
-        } else inQuotes = false;
-      } else cur += ch;
-    } else if (ch === '"') {
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    // Not in quotes.
+    if (ch === '"') {
       inQuotes = true;
     } else if (ch === ",") {
-      cells.push(cur);
-      cur = "";
-    } else cur += ch;
+      record.push(field);
+      field = "";
+    } else if (ch === "\r") {
+      // CRLF or lone CR — flush field then record.
+      record.push(field);
+      field = "";
+      records.push(record);
+      record = [];
+      if (text[i + 1] === "\n") i++; // consume the LF of CRLF
+    } else if (ch === "\n") {
+      record.push(field);
+      field = "";
+      records.push(record);
+      record = [];
+    } else {
+      field += ch;
+    }
   }
-  cells.push(cur);
-  return cells;
+
+  // Flush trailing field/record only if the input didn't end on a newline.
+  if (field !== "" || record.length > 0) {
+    record.push(field);
+    records.push(record);
+  }
+
+  // Drop trailing empty record (e.g. final newline).
+  if (records.length > 0) {
+    const last = records[records.length - 1];
+    if (last.length === 1 && last[0] === "") records.pop();
+  }
+
+  return records;
 }
