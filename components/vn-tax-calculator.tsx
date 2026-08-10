@@ -1,8 +1,9 @@
 "use client";
 
-import { AlertTriangle, BookOpen, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, BookOpen, Download, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { buildDeclaration } from "@/lib/vn-tax/declaration";
+import { exportComplianceCsv, exportComplianceXlsx, exportDeclarationCsv, exportDeclarationXlsx } from "@/lib/vn-tax/export";
 import { computeTax } from "@/lib/vn-tax/compute-tax";
 import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
@@ -46,9 +47,7 @@ export function VnTaxCalculator() {
     setShowSkipped(false);
   };
 
-  const quoteCurrencies = result ? Object.keys(result.tax.totalsByQuote).sort() : [];
-  const mixedQuotes = quoteCurrencies.length > 1;
-  const firstQuote = quoteCurrencies[0] ?? "";
+  const firstQuote = result ? Object.keys(result.tax.totalsByQuote).sort()[0] ?? "" : "";
 
   return (
     <main className="min-h-screen bg-[#071018] text-[#cfd9e3] terminal-shell">
@@ -125,9 +124,7 @@ export function VnTaxCalculator() {
         {result ? (
           <Results
             result={result}
-            quoteCurrencies={quoteCurrencies}
             firstQuote={firstQuote}
-            mixedQuotes={mixedQuotes}
             showSkipped={showSkipped}
             setShowSkipped={setShowSkipped}
           />
@@ -160,22 +157,18 @@ function Disclaimer() {
 
 interface ResultsProps {
   result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
-  quoteCurrencies: string[];
   firstQuote: string;
-  mixedQuotes: boolean;
   showSkipped: boolean;
   setShowSkipped: (v: boolean) => void;
 }
 
 function Results({
   result,
-  quoteCurrencies,
   firstQuote,
-  mixedQuotes,
   showSkipped,
   setShowSkipped,
 }: ResultsProps) {
-  const { parsed, tax } = result;
+  const { parsed } = result;
   const decl = useMemo(() => buildDeclaration(parsed.trades), [parsed]);
 
   if (parsed.format === null) {
@@ -201,58 +194,112 @@ function Results({
         <Card label="Unmatched sells" value={String(decl.totals.unmatchedCount)} />
       </div>
 
-      {mixedQuotes ? (
-        <p className="rounded-sm border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-xs text-[#f0c97a]">
-          Mixed quote currencies detected ({quoteCurrencies.join(", ")}). Per-currency totals below;
-          FX to VND is your responsibility.
-        </p>
-      ) : null}
-
-      {quoteCurrencies.length > 0 ? (
-        <div className="space-y-2">
-          {quoteCurrencies.map((q) => (
-            <div
-              key={q}
-              className="flex items-center justify-between border border-[#1b2d3e] bg-[#0a1622] px-4 py-2 text-xs"
-            >
-              <span className="font-[family-name:var(--font-mono)] text-[#8aa0b5]">{q}</span>
-              <span className="text-[#6bcfa6]">
-                gross {formatAmount(tax.totalsByQuote[q].grossProceeds)} · tax {formatAmount(tax.totalsByQuote[q].tax, q)} · {tax.totalsByQuote[q].count} sells
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-[#6c8094]">No taxable sells in this export.</p>
-      )}
-
-      <Explanation result={result} firstQuote={firstQuote} />
-
-      <PitDeclarationTable result={result} />
-
-      <ComplianceTable result={result} />
-
-      {parsed.skipped.length > 0 ? (
-        <Collapsible
-          open={showSkipped}
-          onToggle={() => setShowSkipped(!showSkipped)}
-          label={`Skipped rows (${parsed.skipped.length})`}
-        >
-          <div className="border border-[#1b2d3e] bg-[#0a1622]">
-            {parsed.skipped.map((s) => (
-              <div key={s.rowIndex} className="border-b border-[#13212e] px-4 py-2 last:border-b-0">
-                <p className="font-[family-name:var(--font-mono)] text-[11px] text-[#ff8972]">
-                  row {s.rowIndex} — {s.reason}
-                </p>
-                <pre className="mt-1 overflow-x-auto font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                  {JSON.stringify(s.raw)}
-                </pre>
-              </div>
-            ))}
-          </div>
-        </Collapsible>
-      ) : null}
+      <Tabs
+        tabs={[
+          {
+            label: "Declaration",
+            content: (
+              <>
+                <Explanation result={result} firstQuote={firstQuote} />
+                <PitDeclarationTable result={result} />
+                <ExportButtons
+                  onCsv={() => exportDeclarationCsv(decl)}
+                  onXlsx={() => exportDeclarationXlsx(decl)}
+                  prefix="pit-declaration"
+                />
+              </>
+            ),
+          },
+          {
+            label: "Breakdown",
+            content: (
+              <>
+                <ComplianceTable result={result} />
+                {parsed.skipped.length > 0 ? (
+                  <Collapsible
+                    open={showSkipped}
+                    onToggle={() => setShowSkipped(!showSkipped)}
+                    label={`Skipped rows (${parsed.skipped.length})`}
+                  >
+                    <div className="border border-[#1b2d3e] bg-[#0a1622]">
+                      {parsed.skipped.map((s) => (
+                        <div key={s.rowIndex} className="border-b border-[#13212e] px-4 py-2 last:border-b-0">
+                          <p className="font-[family-name:var(--font-mono)] text-[11px] text-[#ff8972]">
+                            row {s.rowIndex} — {s.reason}
+                          </p>
+                          <pre className="mt-1 overflow-x-auto font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
+                            {JSON.stringify(s.raw)}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  </Collapsible>
+                ) : null}
+                <ExportButtons
+                  onCsv={() => exportComplianceCsv(parsed)}
+                  onXlsx={() => exportComplianceXlsx(parsed)}
+                  prefix="compliance-breakdown"
+                />
+              </>
+            ),
+          },
+        ]}
+      />
     </section>
+  );
+}
+
+function Tabs({ tabs }: { tabs: { label: string; content: React.ReactNode }[] }) {
+  const [active, setActive] = useState(0);
+  return (
+    <div className="mt-4">
+      <div className="flex gap-1 border-b border-[#1b2d3e]">
+        {tabs.map((t, i) => (
+          <button
+            key={t.label}
+            type="button"
+            onClick={() => setActive(i)}
+            className={`tab-button relative px-4 py-2 text-xs font-semibold transition-colors ${
+              active === i ? "tab-button-active text-[#e0e9f1]" : "text-[#818984] hover:text-[#cfd9e3]"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-4">{tabs[active].content}</div>
+    </div>
+  );
+}
+
+function ExportButtons({
+  onCsv,
+  onXlsx,
+  prefix,
+}: {
+  onCsv: () => void;
+  onXlsx: () => void;
+  prefix: string;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={onCsv}
+        className="terminal-icon-button text-[#aab9c8]"
+        aria-label={`Export ${prefix} as CSV`}
+      >
+        <Download size={13} /> CSV
+      </button>
+      <button
+        type="button"
+        onClick={onXlsx}
+        className="terminal-icon-button text-[#aab9c8]"
+        aria-label={`Export ${prefix} as XLSX`}
+      >
+        <Download size={13} /> XLSX
+      </button>
+    </div>
   );
 }
 
