@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--signal-sans);
+  --font-mono: var(--signal-mono);
+  --font-display: var(--signal-display);
+}
+
+* { box-sizing: border-box; }
+html { background: #071018; scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; background: #071018; color: #cfd9e3; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #d76346; outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+.terminal-shell {
+  background-image:
+    linear-gradient(rgba(75, 111, 137, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(75, 111, 137, .05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.terminal-label { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .13em; color: #7c90a4; }
+.terminal-icon-button { display: inline-flex; align-items: center; gap: 8px; height: 30px; border: 1px solid #294052; background: #0c1a26; color: #aab9c8; padding: 0 12px; transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.terminal-icon-button:hover { border-color: #4d756b; background: #0f202d; color: #76e1b0; }
+.terminal-metric { display: flex; min-height: 66px; align-items: center; gap: 9px; border: 1px solid #213649; background: #09151f; padding: 10px 12px; color: #6bcfa6; text-align: left; transition: border-color .15s ease, background .15s ease; }
+.terminal-metric:hover, .terminal-metric-active { border-color: #416e61; background: #0d201e; }
