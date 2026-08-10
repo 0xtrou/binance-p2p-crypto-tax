@@ -1,14 +1,22 @@
-// Unified PIT declaration builder. One row per trade, with FIFO-matched cost
-// basis, bucket assignment, matched clause, and VND owed. This is THE
-// declaration artifact — the table a taxpayer files.
+// Tờ khai thuế TNCN — mô hình dòng tiền, KHÔNG phải lãi vốn.
 //
-// Bucket priority per SELL:
-//   1. Post-27-Mar-2026 → Transfer 0.1% (Circular 32 Art. 5)
-//   2. Pre-27-Mar-2026 → Other income 10% (thu nhập khác, general PIT fallback)
-// Buys: not taxed, shown as cost-basis source.
+// Thực tế: file CSV P2P (Binance/Remitano) là dòng tiền MUA/BÁN crypto lấy
+// VND. Mỗi dòng là một giao dịch độc lập:
+//   - MUA: chi VND để nhận crypto → dòng tiền RA, không chịu thuế
+//   - BÁN: nhận VND khi bán crypto → dòng tiền VÀO, chịu thuế
 //
-// Business income 15-20% is annual (threshold check), not per-trade. It appears
-// as a year-aggregate summary note, not per-row.
+// Không ghép lô FIFO (như chứng khoán) vì P2P không phải đầu tư lãi vốn.
+// Người dùng mua USDT giá 26k rồi bán giá 27k — đó là spread P2P, không phải
+// lãi vốn đầu tư.
+//
+// Thuế áp dụng:
+//   1. Thuế chuyển nhượng 0,1% trên TỔNG doanh thu bán (sau 27/03/2026)
+//   2. Thuế thu nhập khác 10% trên lợi nhuận ròng (doanh thu bán − chi phí mua)
+//      nếu characterize là thu nhập — tính theo năm, trên VND
+//
+// Lợi nhuận ròng = tổng VND bán − tổng VND mua (cùng tài sản, cùng năm).
+// Nếu bán > mua → lãi ròng → chịu thuế 10%.
+// Nếu mua > bán → lỗ → không có thuế thu nhập khác.
 
 import { CIRCULAR_32_EFFECTIVE, PIT_RATE } from "./constants";
 import { CLAUSES, type RegulationClause } from "./regulation";
@@ -21,40 +29,33 @@ export interface DeclarationRow {
   pair: string;
   side: "BUY" | "SELL";
   gross: number;
-  /** FIFO-matched cost in quote currency. 0 for buys (they ARE the cost). */
-  matchedCost: number;
-  /** gross - matchedCost. Negative = loss. */
-  netProfit: number;
+  /** Thuế phải nộp trên giao dịch này (VND). */
+  taxOwed: number;
   bucket: DeclBucket;
   clause: RegulationClause;
-  /** VND owed on this trade. 0 for buys. */
-  taxOwed: number;
-  /** True if sell had no matching buy lots (cost unknown from CSV). */
-  unmatched: boolean;
 }
 
-export interface YearBusinessNote {
+export interface YearSummary {
   year: number;
-  revenue: number;
-  netProfit: number;
-  overThreshold: boolean;
-  pitLow: number;
-  pitHigh: number;
+  /** Tổng VND bán (tất cả tài sản). */
+  soldVnd: number;
+  /** Tổng VND mua (tất cả tài sản). */
+  boughtVnd: number;
+  /** Lợi nhuận ròng = soldVnd - boughtVnd. */
+  netVnd: number;
+  /** Thuế chuyển nhượng 0,1% trên tổng bán (chỉ từ 27/03/2026). */
+  transferTax: number;
+  /** Thuế thu nhập khác 10% trên lợi nhuận ròng (nếu dương). */
+  otherIncomeTax: number;
+  /** Tổng thuế năm. */
+  totalTax: number;
 }
 
 export interface AssetFlow {
-  /** Tài sản cơ sở (USDT, VNDR, ETH, BTC...). */
   asset: string;
-  /** Tổng số lượng mua (từ các lệnh BUY trong CSV). */
-  boughtQty: number;
-  /** Tổng số lượng bán (từ các lệnh SELL trong CSV). */
-  soldQty: number;
-  /** Tổng giá trị mua VND. */
   boughtVnd: number;
-  /** Tổng giá trị bán VND. */
   soldVnd: number;
-  /** Số lệnh bán không có đủ lệnh mua khớp (thiếu cơ sở giá vốn). */
-  unmatchedSells: number;
+  netVnd: number;
 }
 
 export interface DeclarationResult {
@@ -63,212 +64,140 @@ export interface DeclarationResult {
     transferTax: number;
     otherIncomeTax: number;
     totalTax: number;
-    totalRevenue: number;
-    totalCost: number;
-    totalNetProfit: number;
-    unmatchedCount: number;
-    /** Tổng giá trị mua tất cả tài sản, VND. */
-    totalBoughtVnd: number;
-    /** Tổng giá trị bán tất cả tài sản, VND. */
     totalSoldVnd: number;
+    totalBoughtVnd: number;
+    totalNetVnd: number;
     totalBuyCount: number;
     totalSellCount: number;
+    unmatchedCount: number;
   };
-  /** Dòng tiền theo từng tài sản cơ sở (gộp các cặp cùng base). */
+  yearSummaries: YearSummary[];
   assetFlows: AssetFlow[];
-  businessNotes: YearBusinessNote[];
 }
 
-const BIZ_RATE_LOW = 0.15;
-const BIZ_RATE_HIGH = 0.2;
-const BIZ_THRESHOLD_VND = 500_000_000;
 const OTHER_INCOME_RATE = 0.1;
-const EPSILON = 1e-9;
-
-interface Lot {
-  unitCost: number;
-  qty: number;
-}
 
 /**
- * Build the unified declaration: one row per trade with FIFO cost matching,
- * bucket assignment, clause, and VND owed. Also produces annual business-income
- * notes (the 15-20% alternative characterization above 500M VND revenue).
+ * Xây tờ khai theo mô hình dòng tiền. Mỗi lệnh BÁN chịu thuế chuyển nhượng
+ * 0,1% (sau 27/03/2026). Lợi nhuận ròng năm (bán - mua) chịu thuế thu nhập
+ * khác 10% nếu dương. KHÔNG ghép lô FIFO.
  */
 export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
-  // Group by pair (base+quote) so FIFO lots don't mix across assets.
-  const byPair = new Map<string, ParsedTrade[]>();
-  for (const t of trades) {
-    if (!byPair.has(t.pair)) byPair.set(t.pair, []);
-    byPair.get(t.pair)!.push(t);
-  }
-
   const rows: DeclarationRow[] = [];
-  const unmatchedCount = { count: 0 };
+  const yearAgg = new Map<number, { soldVnd: number; boughtVnd: number }>();
+  const assetMap = new Map<string, { boughtVnd: number; soldVnd: number }>();
 
-  // Per-(year, pair) revenue + netProfit for business income annual check.
-  const yearPairAgg = new Map<string, { revenue: number; netProfit: number; quote: string }>();
+  for (const t of trades) {
+    const year = t.date.getUTCFullYear();
+    if (!yearAgg.has(year)) yearAgg.set(year, { soldVnd: 0, boughtVnd: 0 });
+    const ya = yearAgg.get(year)!;
 
-  for (const [, pairTrades] of byPair) {
-    pairTrades.sort((a, b) => a.date.getTime() - b.date.getTime());
-    const lots: Lot[] = [];
+    // Asset flow (group by base asset).
+    if (!assetMap.has(t.base)) assetMap.set(t.base, { boughtVnd: 0, soldVnd: 0 });
+    const af = assetMap.get(t.base)!;
 
-    for (const t of pairTrades) {
-      if (t.side === "BUY") {
-        if (t.quantity !== null) {
-          lots.push({ unitCost: t.grossValue / t.quantity, qty: t.quantity });
-        }
-        rows.push({
-          date: t.date,
-          pair: t.pair,
-          side: "BUY",
-          gross: t.grossValue,
-          matchedCost: 0,
-          netProfit: 0,
-          bucket: "buy",
-          clause: CLAUSES.notTransfer,
-          taxOwed: 0,
-          unmatched: false,
-        });
-        continue;
-      }
-
-      // SELL: FIFO match against prior BUY lots of the same pair.
-      // VNDR is a 1:1 VND-pegged stablecoin (Remitano) — its "coin amount"
-      // equals its VND amount, so FIFO quantity matching is nonsensical
-      // (every lot and every sell is millions of units). For VNDR pairs,
-      // skip FIFO and treat cost = proceeds (profit = 0) since there is no
-      // price movement for a 1:1 stablecoin.
-      let matchedCost = 0;
-      let unmatched = false;
-      if (t.base === "VNDR") {
-        // 1:1 peg: cost basis = grossValue (no profit on the VND transfer).
-        matchedCost = t.grossValue;
-      } else if (t.quantity === null) {
-        unmatched = true;
-      } else {
-        let remaining = t.quantity;
-        while (remaining > EPSILON && lots.length > 0) {
-          const lot = lots[0];
-          const take = Math.min(remaining, lot.qty);
-          matchedCost += take * lot.unitCost;
-          lot.qty -= take;
-          remaining -= take;
-          if (lot.qty <= EPSILON) lots.shift();
-        }
-        if (remaining > EPSILON) unmatched = true;
-      }
-      if (unmatched) unmatchedCount.count++;
-
-      const netProfit = unmatched ? 0 : t.grossValue - matchedCost;
-      const isPostEffective = t.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
-
-      let bucket: DeclBucket;
-      let clause: RegulationClause;
-      let taxOwed: number;
-      if (isPostEffective) {
-        bucket = "transfer";
-        clause = CLAUSES.rate;
-        taxOwed = roundCents(t.grossValue * PIT_RATE);
-      } else {
-        bucket = "other-income";
-        clause = CLAUSES.otherIncome;
-        // 10% on net profit if positive; losses floor at 0.
-        taxOwed = roundCents(Math.max(0, netProfit) * OTHER_INCOME_RATE);
-      }
-
+    if (t.side === "BUY") {
+      ya.boughtVnd += t.grossValue;
+      af.boughtVnd += t.grossValue;
       rows.push({
         date: t.date,
         pair: t.pair,
-        side: "SELL",
+        side: "BUY",
         gross: t.grossValue,
-        matchedCost: roundCents(matchedCost),
-        netProfit: roundCents(netProfit),
-        bucket,
-        clause,
-        taxOwed,
-        unmatched,
+        taxOwed: 0,
+        bucket: "buy",
+        clause: CLAUSES.notTransfer,
       });
-
-      // Aggregate for business income annual check.
-      const year = t.date.getUTCFullYear();
-      const key = `${year}|${t.pair}`;
-      const agg = yearPairAgg.get(key) ?? { revenue: 0, netProfit: 0, quote: t.quote };
-      agg.revenue += t.grossValue;
-      agg.netProfit += netProfit;
-      yearPairAgg.set(key, agg);
+      continue;
     }
-  }
 
-  // Sort rows newest-first for display.
-  rows.sort((a, b) => b.date.getTime() - a.date.getTime());
+    // SELL — chịu thuế chuyển nhượng 0,1% nếu sau 27/03/2026.
+    ya.soldVnd += t.grossValue;
+    af.soldVnd += t.grossValue;
+    const isPostEffective = t.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
 
-  // Build business income notes: only VND pairs, only years above 500M revenue.
-  const businessNotes: YearBusinessNote[] = [];
-  for (const [key, agg] of yearPairAgg) {
-    if (agg.quote !== "VND") continue;
-    const [yearStr] = key.split("|");
-    const year = Number(yearStr);
-    const overThreshold = agg.revenue > BIZ_THRESHOLD_VND;
-    if (!overThreshold) continue; // below threshold = exempt, no note needed
-    const base = Math.max(0, agg.netProfit);
-    businessNotes.push({
-      year,
-      revenue: roundCents(agg.revenue),
-      netProfit: roundCents(agg.netProfit),
-      overThreshold: true,
-      pitLow: roundCents(base * BIZ_RATE_LOW),
-      pitHigh: roundCents(base * BIZ_RATE_HIGH),
+    let taxOwed = 0;
+    let bucket: DeclBucket;
+    let clause: RegulationClause;
+
+    if (isPostEffective) {
+      // Thuế chuyển nhượng 0,1% trên tổng giá trị giao dịch.
+      taxOwed = roundCents(t.grossValue * PIT_RATE);
+      bucket = "transfer";
+      clause = CLAUSES.rate;
+    } else {
+      // Trước 27/03/2026 — không có thuế chuyển nhượng. Thuế thu nhập khác
+      // 10% được tính theo NĂM (xem yearSummaries), không theo từng giao dịch.
+      bucket = "other-income";
+      clause = CLAUSES.otherIncome;
+    }
+
+    rows.push({
+      date: t.date,
+      pair: t.pair,
+      side: "SELL",
+      gross: t.grossValue,
+      taxOwed,
+      bucket,
+      clause,
     });
   }
-  businessNotes.sort((a, b) => a.year - b.year);
 
-  const sells = rows.filter((r) => r.side === "SELL");
-  const buys = rows.filter((r) => r.side === "BUY");
-  const transferRows = sells.filter((r) => r.bucket === "transfer");
-  const otherRows = sells.filter((r) => r.bucket === "other-income");
+  // Sort newest-first.
+  rows.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  // Asset-level flow (group pairs by base asset, e.g. USDTVND + USDTUSDT → USDT).
-  // Used to show honest buy/sell gap per asset in the UI.
-  const flowMap = new Map<string, AssetFlow>();
-  for (const r of rows) {
-    const asset = r.pair.replace(/VND$|USDT$|USDC$|FDUSD$|BUSD$|TUSD$|USD$|EUR$|BTC$|ETH$|BNB$/, "");
-    if (!flowMap.has(asset)) {
-      flowMap.set(asset, { asset, boughtQty: 0, soldQty: 0, boughtVnd: 0, soldVnd: 0, unmatchedSells: 0 });
-    }
-    const f = flowMap.get(asset)!;
-    if (r.side === "BUY") {
-      f.boughtVnd += r.gross;
-    } else {
-      f.soldVnd += r.gross;
-      if (r.unmatched) f.unmatchedSells += 1;
-    }
+  // Year summaries — thuế thu nhập khác 10% trên lợi nhuận ròng năm.
+  const yearSummaries: YearSummary[] = [];
+  for (const [year, ya] of yearAgg) {
+    const netVnd = ya.soldVnd - ya.boughtVnd;
+    // Thuế chuyển nhượng: chỉ tính trên các lệnh bán sau 27/03/2026 trong năm.
+    const transferTax = rows
+      .filter((r) => r.bucket === "transfer" && r.date.getUTCFullYear() === year)
+      .reduce((s, r) => s + r.taxOwed, 0);
+    // Thuế thu nhập khác 10% trên lợi nhuận ròng năm (nếu dương).
+    const otherIncomeTax = netVnd > 0 ? roundCents(netVnd * OTHER_INCOME_RATE) : 0;
+    yearSummaries.push({
+      year,
+      soldVnd: roundCents(ya.soldVnd),
+      boughtVnd: roundCents(ya.boughtVnd),
+      netVnd: roundCents(netVnd),
+      transferTax,
+      otherIncomeTax,
+      totalTax: roundCents(transferTax + otherIncomeTax),
+    });
   }
-  const assetFlows = [...flowMap.values()]
-    .map((f) => ({
-      ...f,
+  yearSummaries.sort((a, b) => a.year - b.year);
+
+  // Asset flows.
+  const assetFlows: AssetFlow[] = [...assetMap.entries()]
+    .map(([asset, f]) => ({
+      asset,
       boughtVnd: roundCents(f.boughtVnd),
       soldVnd: roundCents(f.soldVnd),
+      netVnd: roundCents(f.soldVnd - f.boughtVnd),
     }))
     .sort((a, b) => b.soldVnd - a.soldVnd);
+
+  const allSold = rows.filter((r) => r.side === "SELL");
+  const allBought = rows.filter((r) => r.side === "BUY");
+  const totalSoldVnd = allSold.reduce((s, r) => s + r.gross, 0);
+  const totalBoughtVnd = allBought.reduce((s, r) => s + r.gross, 0);
 
   return {
     rows,
     totals: {
-      transferTax: roundCents(transferRows.reduce((s, r) => s + r.taxOwed, 0)),
-      otherIncomeTax: roundCents(otherRows.reduce((s, r) => s + r.taxOwed, 0)),
-      totalTax: roundCents(sells.reduce((s, r) => s + r.taxOwed, 0)),
-      totalRevenue: roundCents(sells.reduce((s, r) => s + r.gross, 0)),
-      totalCost: roundCents(sells.reduce((s, r) => s + r.matchedCost, 0)),
-      totalNetProfit: roundCents(sells.reduce((s, r) => s + r.netProfit, 0)),
-      unmatchedCount: unmatchedCount.count,
-      totalBoughtVnd: roundCents(buys.reduce((s, r) => s + r.gross, 0)),
-      totalSoldVnd: roundCents(sells.reduce((s, r) => s + r.gross, 0)),
-      totalBuyCount: buys.length,
-      totalSellCount: sells.length,
+      transferTax: roundCents(allSold.filter((r) => r.bucket === "transfer").reduce((s, r) => s + r.taxOwed, 0)),
+      otherIncomeTax: roundCents(yearSummaries.reduce((s, y) => s + y.otherIncomeTax, 0)),
+      totalTax: roundCents(yearSummaries.reduce((s, y) => s + y.totalTax, 0)),
+      totalSoldVnd: roundCents(totalSoldVnd),
+      totalBoughtVnd: roundCents(totalBoughtVnd),
+      totalNetVnd: roundCents(totalSoldVnd - totalBoughtVnd),
+      totalBuyCount: allBought.length,
+      totalSellCount: allSold.length,
+      unmatchedCount: 0, // mô hình dòng tiền — không có "unmatched"
     },
+    yearSummaries,
     assetFlows,
-    businessNotes,
   };
 }
 

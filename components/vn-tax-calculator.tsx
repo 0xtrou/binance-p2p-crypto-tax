@@ -323,7 +323,7 @@ function Results({
         <Card label={S.totalPit} value={formatAmount(decl.totals.totalTax, "VND")} accent />
         <Card label={S.transfer01} value={formatAmount(decl.totals.transferTax, "VND")} />
         <Card label={S.otherIncome10} value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
-        <Card label={S.unmatchedSells} value={String(decl.totals.unmatchedCount)} />
+        <Card label="Lợi nhuận ròng" value={formatAmount(decl.totals.totalNetVnd, "VND")} />
         <Card label={S.totalBuyVnd} value={formatAmount(decl.totals.totalBoughtVnd, "VND")} />
         <Card label={S.totalSellVnd} value={formatAmount(decl.totals.totalSoldVnd, "VND")} />
         <Card label={S.buyCount} value={String(decl.totals.totalBuyCount)} />
@@ -627,8 +627,7 @@ function Explanation({ result }: ExplanationProps) {
                 </p>
                 {firstOther ? (
                   <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                    vd {formatDate(firstOther.date)} {firstOther.pair}: ({formatAmount(firstOther.gross)} −{" "}
-                    {formatAmount(firstOther.matchedCost)}) × 0,1 = {formatAmount(firstOther.taxOwed, "VND")}
+                    vd: tổng bán năm − tổng mua năm × 0,1 = thuế thu nhập khác năm đó
                   </p>
                 ) : null}
                 <p className="mt-1 text-[10px] text-[#6c8094]">
@@ -731,8 +730,6 @@ function PitDeclarationTable({
               <th>{S.pair}</th>
               <th>{S.side}</th>
               <th className="text-right">{S.gross}</th>
-              <th className="text-right">{S.costFifo}</th>
-              <th className="text-right">{S.net}</th>
               <th>{S.bucket}</th>
               <th>{S.clause}</th>
               <th className="text-right">{S.taxOwed}</th>
@@ -745,13 +742,8 @@ function PitDeclarationTable({
                 <td className="whitespace-nowrap text-[#cfd9e3]">{r.pair}</td>
                 <td className="whitespace-nowrap">
                   <span className={r.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{r.side === "SELL" ? S.sell : S.buy}</span>
-                  {r.unmatched ? <span className="ml-1 text-[#ff8972]" title="không có lệnh mua khớp trong CSV">⚠</span> : null}
                 </td>
                 <td className="text-right text-[#cfd9e3]">{formatAmount(r.gross, "VND")}</td>
-                <td className="text-right text-[#8aa0b5]">{r.side === "SELL" ? formatAmount(r.matchedCost, "VND") : "—"}</td>
-                <td className={`text-right ${r.netProfit > 0 ? "text-[#6bcfa6]" : r.netProfit < 0 ? "text-[#ff8972]" : "text-[#6c8094]"}`}>
-                  {r.side === "SELL" ? formatAmount(r.netProfit, "VND") : "—"}
-                </td>
                 <td className="whitespace-nowrap"><span className={bucketColor(r.bucket)}>{bucketLabel(r.bucket)}</span></td>
                 <td className="whitespace-nowrap text-[#6c8094]">{r.clause.id}</td>
                 <td className="text-right">
@@ -762,7 +754,7 @@ function PitDeclarationTable({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#1b2d3e] bg-[#0d1924] [&>td]:px-2 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-              <td colSpan={8} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
+              <td colSpan={6} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
               <td className="text-right text-[#76e1b0]">{formatAmount(decl.totals.totalTax, "VND")}</td>
             </tr>
           </tfoot>
@@ -787,44 +779,35 @@ function PitDeclarationTable({
         </button>
       ) : null}
 
-      {decl.totals.unmatchedCount > 0 ? (
-        <p className="mt-3 text-[10px] leading-relaxed text-[#ff8972]">
-          <AlertTriangle size={11} className="mr-1 inline" />
-          {S.unmatchedWarn(decl.totals.unmatchedCount)}
-        </p>
-      ) : null}
-
-      {decl.businessNotes.length > 0 ? (
-        <div className="mt-3 border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-[11px] text-[#f0c97a]">
-          <p className="mb-1 flex items-center gap-1 font-semibold">
-            <AlertTriangle size={11} /> {S.bizNoteTitle}
-          </p>
-          <p className="mb-2 text-[#c2a05a]">
-            {S.bizNoteBody}
-          </p>
+      {decl.yearSummaries.length > 0 ? (
+        <div className="mt-3 border border-[#1b2d3e] bg-[#0a1622] px-3 py-2 text-[11px]">
+          <p className="terminal-label mb-2">Tóm tắt theo năm</p>
           <table className="w-full text-left font-[family-name:var(--font-mono)] text-[10px]">
-            <thead className="text-[#c2a05a]">
+            <thead className="text-[#6c8094]">
               <tr>
                 <th className="py-1">Năm</th>
-                <th className="text-right">Doanh thu</th>
+                <th className="text-right">Tổng mua</th>
+                <th className="text-right">Tổng bán</th>
                 <th className="text-right">Lợi nhuận ròng</th>
-                <th className="text-right">TNCN 15-20%</th>
+                <th className="text-right">Thuế chuyển nhượng 0,1%</th>
+                <th className="text-right">Thu nhập khác 10%</th>
+                <th className="text-right">Tổng thuế</th>
               </tr>
             </thead>
-            <tbody className="text-[#f0c97a]">
-              {decl.businessNotes.map((n) => (
-                <tr key={n.year} className="border-t border-[#2a1f0d]">
-                  <td className="py-1">{n.year}</td>
-                  <td className="text-right">{formatAmount(n.revenue, "VND")}</td>
-                  <td className="text-right">{formatAmount(n.netProfit, "VND")}</td>
-                  <td className="text-right">{formatAmount(n.pitLow)}–{formatAmount(n.pitHigh, "VND")}</td>
+            <tbody>
+              {decl.yearSummaries.map((y) => (
+                <tr key={y.year} className="border-t border-[#13212e] [&>td]:py-1">
+                  <td className="text-[#cfd9e3]">{y.year}</td>
+                  <td className="text-right text-[#67a9f5]">{formatAmount(y.boughtVnd, "VND")}</td>
+                  <td className="text-right text-[#ff8972]">{formatAmount(y.soldVnd, "VND")}</td>
+                  <td className={`text-right ${y.netVnd > 0 ? "text-[#76e1b0]" : "text-[#6c8094]"}`}>{formatAmount(y.netVnd, "VND")}</td>
+                  <td className="text-right text-[#76e1b0]">{formatAmount(y.transferTax, "VND")}</td>
+                  <td className="text-right text-[#f0c97a]">{formatAmount(y.otherIncomeTax, "VND")}</td>
+                  <td className="text-right font-semibold text-[#76e1b0]">{formatAmount(y.totalTax, "VND")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[10px] text-[#c2a05a]">
-            {S.bizNoteCsvOnly}
-          </p>
         </div>
       ) : null}
 
