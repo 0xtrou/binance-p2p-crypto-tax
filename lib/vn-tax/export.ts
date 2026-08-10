@@ -38,30 +38,36 @@ const ts = () => new Date().toISOString().slice(0, 10);
 
 /** Build the declaration rows as a 2D array (header + data) for export. */
 function declarationRows(decl: DeclarationResult): (string | number)[][] {
-  const header = ["Ngày", "Cặp", "Chiều", "Tổng VND", "Nhóm", "Điều khoản", "Thuế VND"];
-  const data = decl.rows.map((r) => [
-    formatDate(r.date), r.pair, r.side, r.gross, r.bucket, r.clause.id, r.taxOwed,
-  ]);
-  const totals = ["TỔNG", "", "", decl.totals.totalSoldVnd, "", "", decl.totals.totalTax];
+  const header = ["Ngày", "Nguồn", "Cặp", "Chiều", "Tổng VND", "Nhóm", "Điều khoản", "Thuế giao dịch VND", "Thuế năm VND"];
+  // Map year → total tax for that year (for the "thuế năm" column).
+  const yearTaxMap = new Map<number, number>();
+  for (const y of decl.yearSummaries) yearTaxMap.set(y.year, y.totalTax);
+
+  const data = decl.rows.map((r) => {
+    const yearTax = r.side === "SELL" ? (yearTaxMap.get(r.date.getUTCFullYear()) ?? 0) : 0;
+    return [
+      formatDate(r.date), r.source, r.pair, r.side, r.gross, r.bucket, r.clause.id,
+      r.taxOwed, yearTax,
+    ];
+  });
+  const totals = ["TỔNG", "", "", "", decl.totals.totalSoldVnd, "", "", decl.totals.totalTax, decl.totals.totalTax];
   return [header, ...data, totals];
 }
 
 /** Build compliance (per-trade classification) rows for export. */
 function complianceRows(parsed: ParseResult): (string | number)[][] {
-  const header = [
-    "Date", "Pair", "Side", "Gross", "Classification", "Clause", "Reason", "Payment",
-  ];
+  const header = ["Ngày", "Nguồn", "Cặp", "Chiều", "Tổng VND", "Phân loại", "Điều khoản", "Lý do", "Thanh toán VND"];
   const rows = [...parsed.trades]
     .sort((a, b) => b.date.getTime() - a.date.getTime())
     .map((t) => {
       const c = classifyTrade(t);
       return [
-        formatDate(t.date), t.pair, t.side, t.grossValue,
+        formatDate(t.date), t.source, t.pair, t.side, t.grossValue,
         c.bucket, c.clause.id, c.reason, c.payment,
       ];
     });
   if (parsed.skipped.length > 0) {
-    rows.push(["", "", "", "", "skipped", "", `${parsed.skipped.length} rows skipped`, ""]);
+    rows.push(["", "", "", "", "", "bỏ qua", "", `${parsed.skipped.length} dòng bỏ qua`, ""]);
   }
   return [header, ...rows];
 }
