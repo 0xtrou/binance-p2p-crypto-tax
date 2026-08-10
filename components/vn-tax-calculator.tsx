@@ -42,18 +42,27 @@ const SAMPLE_BINANCE = [
 ].join("\n");
 
 export function VnTaxCalculator() {
-  // Client-only lazy init avoids SSR/CSR mismatch + effect-setState lint.
-  const [sources, setSources] = useState<Sources>(() => (typeof window === "undefined" ? EMPTY_SOURCES : loadSources()));
+  // Start empty on both server and client (avoids hydration mismatch #418).
+  // Load from localStorage after mount.
+  const [sources, setSources] = useState<Sources>(EMPTY_SOURCES);
+  const [mounted, setMounted] = useState(false);
   const [showSkipped, setShowSkipped] = useState(false);
 
-  // Persist on change.
+  // One-shot hydration from localStorage after mount.
   useEffect(() => {
+    setSources(loadSources());
+    setMounted(true);
+  }, []);
+
+  // Persist on change (only after mount to avoid clobbering pre-hydration).
+  useEffect(() => {
+    if (!mounted) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sources));
     } catch {
       // Quota or privacy mode — ignore.
     }
-  }, [sources]);
+  }, [sources, mounted]);
 
   // Parse each source independently; concat trades for unified declaration.
   const result = useMemo(() => {
@@ -79,7 +88,8 @@ export function VnTaxCalculator() {
       source: (i < (parsedResults.remitano?.skipped.length ?? 0) ? "Remitano" : "Binance") as string,
     }));
 
-    const parsed = { trades, skipped: skippedTagged, format: null as null };
+    const mergedFormat = parsedResults.binance?.format ?? parsedResults.remitano?.format ?? null;
+    const parsed = { trades, skipped: skippedTagged, format: mergedFormat };
     return { parsed, tax: computeTax(trades), perSource: parsedResults };
   }, [sources]);
 
