@@ -701,7 +701,7 @@ function PitDeclarationTable({
   result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
 }) {
   const decl = useMemo(() => buildDeclaration(result.parsed.trades), [result]);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
 
   if (decl.rows.length === 0) {
     return (
