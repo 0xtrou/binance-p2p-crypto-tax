@@ -33,6 +33,8 @@ export interface DeclarationRow {
   taxOwed: number;
   bucket: DeclBucket;
   clause: RegulationClause;
+  /** Nguồn: "Remitano" hoặc "Binance". */
+  source: string;
 }
 
 export interface YearSummary {
@@ -107,6 +109,7 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
         taxOwed: 0,
         bucket: "buy",
         clause: CLAUSES.notTransfer,
+        source: t.source,
       });
       continue;
     }
@@ -140,6 +143,7 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
       taxOwed,
       bucket,
       clause,
+      source: t.source,
     });
   }
 

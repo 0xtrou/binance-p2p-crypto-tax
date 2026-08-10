@@ -17,6 +17,8 @@ export const ParsedTrade = z.object({
    *  in the business-income calc. Null when the CSV variant lacks a quantity
    *  column — falling back to quote-value matching in that case. */
   quantity: z.number().positive().nullable(),
+  /** Nguồn dữ liệu: "Remitano" hoặc "Binance". Gắn sau khi parse. */
+  source: z.string().default(""),
 });
 export type ParsedTrade = z.infer<typeof ParsedTrade>;
 

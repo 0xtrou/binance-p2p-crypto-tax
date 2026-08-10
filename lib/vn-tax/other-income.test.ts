@@ -10,7 +10,7 @@ const sell = (dateIso: string, gross: number, qty: number, quote = "VND"): Parse
   quote,
   side: "SELL",
   grossValue: gross,
-  quantity: qty,
+  quantity: qty, source: "",
 });
 const buy = (dateIso: string, gross: number, qty: number, quote = "VND"): ParsedTrade => ({
   date: new Date(dateIso),
@@ -19,7 +19,7 @@ const buy = (dateIso: string, gross: number, qty: number, quote = "VND"): Parsed
   quote,
   side: "BUY",
   grossValue: gross,
-  quantity: qty,
+  quantity: qty, source: "",
 });
 
 test("flat 10% on net profit, no threshold", () => {

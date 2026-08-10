@@ -5,10 +5,10 @@ import { CIRCULAR_32_EFFECTIVE } from "./constants";
 import type { ParsedTrade } from "./schema";
 
 const buy = (iso: string, gross: number, base = "USDT", quote = "VND"): ParsedTrade => ({
-  date: new Date(iso), pair: `${base}${quote}`, base, quote, side: "BUY", grossValue: gross, quantity: null,
+  date: new Date(iso), pair: `${base}${quote}`, base, quote, side: "BUY", grossValue: gross, quantity: null, source: "",
 });
 const sell = (iso: string, gross: number, base = "USDT", quote = "VND"): ParsedTrade => ({
-  date: new Date(iso), pair: `${base}${quote}`, base, quote, side: "SELL", grossValue: gross, quantity: null,
+  date: new Date(iso), pair: `${base}${quote}`, base, quote, side: "SELL", grossValue: gross, quantity: null, source: "",
 });
 
 test("BUY row: taxOwed = 0, bucket = buy", () => {

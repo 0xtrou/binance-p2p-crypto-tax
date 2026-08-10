@@ -10,7 +10,7 @@ const vndSell = (dateIso: string, gross: number, qty: number): ParsedTrade => ({
   quote: "VND",
   side: "SELL",
   grossValue: gross,
-  quantity: qty,
+  quantity: qty, source: "",
 });
 const vndBuy = (dateIso: string, gross: number, qty: number): ParsedTrade => ({
   date: new Date(dateIso),
@@ -19,7 +19,7 @@ const vndBuy = (dateIso: string, gross: number, qty: number): ParsedTrade => ({
   quote: "VND",
   side: "BUY",
   grossValue: gross,
-  quantity: qty,
+  quantity: qty, source: "",
 });
 
 test("exempt when VND revenue <= 500M", () => {
@@ -93,8 +93,8 @@ test("sell without matching buy qty is flagged unmatched", () => {
 
 test("non-VND quote flagged as unknown-fx (threshold not evaluated)", () => {
   const r = computeBusinessIncome([
-    { date: new Date("2026-04-01T00:00:00Z"), pair: "BTCUSDT", base: "BTC", quote: "USDT", side: "BUY", grossValue: 1000, quantity: 0.025 },
-    { date: new Date("2026-04-02T00:00:00Z"), pair: "BTCUSDT", base: "BTC", quote: "USDT", side: "SELL", grossValue: 1200, quantity: 0.025 },
+    { date: new Date("2026-04-01T00:00:00Z"), pair: "BTCUSDT", base: "BTC", quote: "USDT", side: "BUY", grossValue: 1000, quantity: 0.025, source: "" },
+    { date: new Date("2026-04-02T00:00:00Z"), pair: "BTCUSDT", base: "BTC", quote: "USDT", side: "SELL", grossValue: 1200, quantity: 0.025, source: "" },
   ]);
   assert.equal(r.perYear[0].status, "unknown-fx");
   assert.equal(r.perYear[0].quote, "USDT");

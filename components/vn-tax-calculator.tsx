@@ -74,8 +74,8 @@ export function VnTaxCalculator() {
     if (!hasAny) return null;
 
     const trades = [
-      ...(parsedResults.remitano?.trades ?? []),
-      ...(parsedResults.binance?.trades ?? []),
+      ...(parsedResults.remitano?.trades.map((t) => ({ ...t, source: "Remitano" })) ?? []),
+      ...(parsedResults.binance?.trades.map((t) => ({ ...t, source: "Binance" })) ?? []),
     ];
     const skipped = [
       ...(parsedResults.remitano?.skipped ?? []),
@@ -457,15 +457,38 @@ function ComplianceTable({
 }: {
   result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
 }) {
-  const { parsed, tax } = result;
+  const { parsed } = result;
+  const [sortKey, setSortKey] = useState<string>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
   if (parsed.trades.length === 0) {
-    return <p className="text-xs text-[#6c8094]">No trades to display.</p>;
+    return <p className="text-xs text-[#6c8094]">Không có giao dịch.</p>;
   }
 
-  // Sort newest-first for the audit view; original parse order preserved in `parsed.trades`.
-  const rows = [...parsed.trades].sort((a, b) => b.date.getTime() - a.date.getTime());
+  const rows = [...parsed.trades].sort((a, b) => {
+    let cmp = 0;
+    const av: string | number = sortKey === "date" ? a.date.getTime()
+      : sortKey === "gross" ? a.grossValue
+      : (a as unknown as Record<string, unknown>)[sortKey] as string | number;
+    const bv: string | number = sortKey === "date" ? b.date.getTime()
+      : sortKey === "gross" ? b.grossValue
+      : (b as unknown as Record<string, unknown>)[sortKey] as string | number;
+    if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+    else cmp = String(av).localeCompare(String(bv));
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
   const totalPayment = rows.reduce((s, t) => s + classifyTrade(t).payment, 0);
-  const totalQuote = rows[0]?.quote ?? "";
+  const onSort = (key: string) => {
+    if (key === sortKey) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+  const sortArrow = (key: string) => key === sortKey ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+  const Th = ({ k, label, right }: { k: string; label: string; right?: boolean }) => (
+    <th className={`${right ? "text-right " : ""}cursor-pointer hover:text-[#cfd9e3]`} onClick={() => onSort(k)}>
+      {label}{sortArrow(k)}
+    </th>
+  );
 
   return (
     <div>
@@ -473,14 +496,14 @@ function ComplianceTable({
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
-            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
-              <th>{S.date}</th>
-              <th>{S.pair}</th>
-              <th>{S.side}</th>
-              <th className="text-right">{S.gross}</th>
-              <th>{S.classification}</th>
-              <th>{S.clause}</th>
-              <th className="text-right">{S.taxOwed}</th>
+            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium select-none">
+              <Th k="date" label={S.date} />
+              <Th k="source" label="Nguồn" />
+              <Th k="pair" label={S.pair} />
+              <Th k="side" label={S.side} />
+              <Th k="gross" label={S.gross} right />
+              <Th k="bucket" label={S.classification} />
+              <Th k="clause" label={S.clause} />
             </tr>
           </thead>
           <tbody>
@@ -489,6 +512,9 @@ function ComplianceTable({
               return (
                 <tr key={i} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:align-top">
                   <td className="whitespace-nowrap font-[family-name:var(--font-mono)] text-[11px] text-[#8aa0b5]">{formatDate(t.date)}</td>
+                  <td className="whitespace-nowrap text-[10px]">
+                    <span className={t.source === "Remitano" ? "text-[#67a9f5]" : "text-[#f0c97a]"}>{t.source || "—"}</span>
+                  </td>
                   <td className="whitespace-nowrap font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">{t.pair}</td>
                   <td className="whitespace-nowrap font-[family-name:var(--font-mono)] text-[11px]">
                     <span className={t.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{t.side === "SELL" ? S.sell : S.buy}</span>
@@ -496,19 +522,8 @@ function ComplianceTable({
                   <td className="text-right font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">{formatAmount(t.grossValue, t.quote)}</td>
                   <td className="text-[#a9b8c7]">
                     <span className={bucketColor(c.bucket)}>{bucketLabel(c.bucket)}</span>
-                    <span className="block text-[10px] text-[#6c8094]">{c.reason}</span>
                   </td>
-                  <td className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                    {c.clause.id}
-                    <span className="block">{c.clause.instrument.replace("Thông tư số 32/2026/TT-BTC (Bộ Tài chính)", "TT 32/2026")}</span>
-                  </td>
-                  <td className="text-right font-[family-name:var(--font-mono)] text-[11px]">
-                    {c.payment > 0 ? (
-                      <span className="text-[#76e1b0]">{formatAmount(c.payment, t.quote)}</span>
-                    ) : (
-                      <span className="text-[#6c8094]">0.00 {t.quote}</span>
-                    )}
-                  </td>
+                  <td className="font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">{c.clause.id}</td>
                 </tr>
               );
             })}
@@ -516,14 +531,11 @@ function ComplianceTable({
           <tfoot>
             <tr className="border-t border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
               <td colSpan={6} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
-              <td className="text-right text-[#76e1b0]">{formatAmount(totalPayment, totalQuote)}</td>
+              <td className="text-right text-[#76e1b0]">{formatAmount(totalPayment, "VND")}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <p className="mt-2 text-[10px] text-[#6c8094]">
-        {tax.totals.taxableSellCount} taxable · {tax.totals.greyZoneCount} grey-zone · {tax.totals.buyCount} buys
-      </p>
     </div>
   );
 }
@@ -701,20 +713,47 @@ function PitDeclarationTable({
 }) {
   const decl = useMemo(() => buildDeclaration(result.parsed.trades), [result]);
   const [showAll, setShowAll] = useState(true);
+  const [sortKey, setSortKey] = useState<string>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   if (decl.rows.length === 0) {
     return (
       <div>
         <h2 className="terminal-label mb-2 flex items-center gap-2">
-          <FileSpreadsheet size={13} /> PIT declaration
+          <FileSpreadsheet size={13} /> {S.declarationTitle}
         </h2>
-        <p className="text-xs text-[#6c8094]">No trades to declare.</p>
+        <p className="text-xs text-[#6c8094]">Không có giao dịch.</p>
       </div>
     );
   }
 
-  const visibleRows = showAll ? decl.rows : decl.rows.slice(0, 12);
-  const hiddenCount = decl.rows.length - visibleRows.length;
+  const sorted = [...decl.rows].sort((a, b) => {
+    let cmp = 0;
+    const av: string | number = sortKey === "date" ? a.date.getTime()
+      : sortKey === "gross" ? a.gross
+      : sortKey === "taxOwed" ? a.taxOwed
+      : (a as unknown as Record<string, unknown>)[sortKey] as string | number;
+    const bv: string | number = sortKey === "date" ? b.date.getTime()
+      : sortKey === "gross" ? b.gross
+      : sortKey === "taxOwed" ? b.taxOwed
+      : (b as unknown as Record<string, unknown>)[sortKey] as string | number;
+    if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+    else cmp = String(av).localeCompare(String(bv));
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  const visibleRows = showAll ? sorted : sorted.slice(0, 12);
+  const hiddenCount = sorted.length - visibleRows.length;
+  const onSort = (key: string) => {
+    if (key === sortKey) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+  const sortArrow = (key: string) => key === sortKey ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+  const Th = ({ k, label, right }: { k: string; label: string; right?: boolean }) => (
+    <th className={`${right ? "text-right " : ""}cursor-pointer hover:text-[#cfd9e3]`} onClick={() => onSort(k)}>
+      {label}{sortArrow(k)}
+    </th>
+  );
 
   return (
     <div>
@@ -725,20 +764,24 @@ function PitDeclarationTable({
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
-            <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-medium">
-              <th>{S.date}</th>
-              <th>{S.pair}</th>
-              <th>{S.side}</th>
-              <th className="text-right">{S.gross}</th>
-              <th>{S.bucket}</th>
-              <th>{S.clause}</th>
-              <th className="text-right">{S.taxOwed}</th>
+            <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-medium select-none">
+              <Th k="date" label={S.date} />
+              <Th k="source" label="Nguồn" />
+              <Th k="pair" label={S.pair} />
+              <Th k="side" label={S.side} />
+              <Th k="gross" label={S.gross} right />
+              <Th k="bucket" label={S.bucket} />
+              <Th k="clause" label={S.clause} />
+              <Th k="taxOwed" label={S.taxOwed} right />
             </tr>
           </thead>
           <tbody>
             {visibleRows.map((r, i) => (
               <tr key={i} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-2 [&>td]:py-1.5 [&>td]:align-top [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[10px]">
                 <td className="whitespace-nowrap text-[#8aa0b5]">{formatDate(r.date)}</td>
+                <td className="whitespace-nowrap">
+                  <span className={r.source === "Remitano" ? "text-[#67a9f5]" : "text-[#f0c97a]"}>{r.source || "—"}</span>
+                </td>
                 <td className="whitespace-nowrap text-[#cfd9e3]">{r.pair}</td>
                 <td className="whitespace-nowrap">
                   <span className={r.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{r.side === "SELL" ? S.sell : S.buy}</span>
@@ -754,7 +797,7 @@ function PitDeclarationTable({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#1b2d3e] bg-[#0d1924] [&>td]:px-2 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-              <td colSpan={6} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
+              <td colSpan={7} className="text-right text-[#8aa0b5]">{S.totalPitToDeclare}</td>
               <td className="text-right text-[#76e1b0]">{formatAmount(decl.totals.totalTax, "VND")}</td>
             </tr>
           </tfoot>

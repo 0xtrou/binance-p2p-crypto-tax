@@ -13,7 +13,7 @@ const sell = (dateIso: string, quote: string, grossValue: number): ParsedTrade =
     quote,
     side: "SELL",
     grossValue,
-    quantity: 1,
+    quantity: 1, source: "",
   };
 };
 
@@ -24,7 +24,7 @@ const buy = (dateIso: string, grossValue: number): ParsedTrade => ({
   quote: "USDT",
   side: "BUY",
   grossValue,
-  quantity: 1,
+  quantity: 1, source: "",
 });
 
 test("taxes a sell on the effective date", () => {

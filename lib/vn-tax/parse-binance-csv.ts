@@ -235,6 +235,7 @@ function parseRow(
       side,
       grossValue,
       quantity,
+      source: "",
     },
   };
 }
@@ -293,6 +294,7 @@ function parseRemitanoRow(raw: Record<string, string>): { trade: ParsedTrade } |
       side: side.toUpperCase() as "BUY" | "SELL",
       grossValue,
       quantity,
+      source: "",
     },
   };
 }
