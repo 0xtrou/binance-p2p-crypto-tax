@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, BookOpen, Download, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildDeclaration } from "@/lib/vn-tax/declaration";
 import { exportComplianceCsv, exportComplianceXlsx, exportDeclarationCsv, exportDeclarationXlsx } from "@/lib/vn-tax/export";
 import { computeTax } from "@/lib/vn-tax/compute-tax";
@@ -18,6 +18,30 @@ interface Sources {
 }
 
 const EMPTY_SOURCES: Sources = { remitano: "", binance: "" };
+
+function SortableHeader({
+  sortKey,
+  activeSortKey,
+  sortDir,
+  label,
+  right,
+  onSort,
+}: {
+  sortKey: string;
+  activeSortKey: string;
+  sortDir: "asc" | "desc";
+  label: string;
+  right?: boolean;
+  onSort: (key: string) => void;
+}) {
+  const sortArrow = sortKey === activeSortKey ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+
+  return (
+    <th className={`${right ? "text-right " : ""}cursor-pointer hover:text-[#cfd9e3]`} onClick={() => onSort(sortKey)}>
+      {label}{sortArrow}
+    </th>
+  );
+}
 
 function loadSources(): Sources {
   if (typeof window === "undefined") return EMPTY_SOURCES;
@@ -45,24 +69,28 @@ export function VnTaxCalculator() {
   // Start empty on both server and client (avoids hydration mismatch #418).
   // Load from localStorage after mount.
   const [sources, setSources] = useState<Sources>(EMPTY_SOURCES);
-  const [mounted, setMounted] = useState(false);
+  const hasHydratedSources = useRef(false);
   const [showSkipped, setShowSkipped] = useState(false);
 
   // One-shot hydration from localStorage after mount.
   useEffect(() => {
-    setSources(loadSources());
-    setMounted(true);
+    const timer = window.setTimeout(() => {
+      hasHydratedSources.current = true;
+      setSources(loadSources());
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Persist on change (only after mount to avoid clobbering pre-hydration).
   useEffect(() => {
-    if (!mounted) return;
+    if (!hasHydratedSources.current) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sources));
     } catch {
       // Quota or privacy mode — ignore.
     }
-  }, [sources, mounted]);
+  }, [sources]);
 
   // Parse each source independently; concat trades for unified declaration.
   const result = useMemo(() => {
@@ -495,13 +523,6 @@ function ComplianceTable({
     if (key === sortKey) setSortDir(sortDir === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("desc"); }
   };
-  const sortArrow = (key: string) => key === sortKey ? (sortDir === "asc" ? " ↑" : " ↓") : "";
-  const Th = ({ k, label, right }: { k: string; label: string; right?: boolean }) => (
-    <th className={`${right ? "text-right " : ""}cursor-pointer hover:text-[#cfd9e3]`} onClick={() => onSort(k)}>
-      {label}{sortArrow(k)}
-    </th>
-  );
-
   return (
     <div>
       <h2 className="terminal-label mb-2">{S.complianceTitle}</h2>
@@ -509,13 +530,13 @@ function ComplianceTable({
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
             <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium select-none">
-              <Th k="date" label={S.date} />
-              <Th k="source" label="Nguồn" />
-              <Th k="pair" label={S.pair} />
-              <Th k="side" label={S.side} />
-              <Th k="gross" label={S.gross} right />
-              <Th k="bucket" label={S.classification} />
-              <Th k="clause" label={S.clause} />
+              <SortableHeader sortKey="date" activeSortKey={sortKey} sortDir={sortDir} label={S.date} onSort={onSort} />
+              <SortableHeader sortKey="source" activeSortKey={sortKey} sortDir={sortDir} label="Nguồn" onSort={onSort} />
+              <SortableHeader sortKey="pair" activeSortKey={sortKey} sortDir={sortDir} label={S.pair} onSort={onSort} />
+              <SortableHeader sortKey="side" activeSortKey={sortKey} sortDir={sortDir} label={S.side} onSort={onSort} />
+              <SortableHeader sortKey="gross" activeSortKey={sortKey} sortDir={sortDir} label={S.gross} right onSort={onSort} />
+              <SortableHeader sortKey="bucket" activeSortKey={sortKey} sortDir={sortDir} label={S.classification} onSort={onSort} />
+              <SortableHeader sortKey="clause" activeSortKey={sortKey} sortDir={sortDir} label={S.clause} onSort={onSort} />
             </tr>
           </thead>
           <tbody>
@@ -604,10 +625,8 @@ function Explanation({ result }: ExplanationProps) {
   const decl = useMemo(() => buildDeclaration(parsed.trades), [parsed]);
   const [open, setOpen] = useState(false);
 
-  // Worked examples — pick first transfer-bucket sell + first other-income sell
-  // so both bucket formulas are legible. Fall back to placeholders if absent.
+  // Worked example — pick a transfer-bucket sell when available.
   const firstTransfer = decl.rows.find((r) => r.bucket === "transfer");
-  const firstOther = decl.rows.find((r) => r.bucket === "other-income");
 
   return (
     <div>
@@ -641,7 +660,8 @@ function Explanation({ result }: ExplanationProps) {
                   </p>
                 ) : null}
                 <p className="mt-1 text-[10px] text-[#6c8094]">
-                  {S.transferBucketNote}
+                  Đây là <strong className="text-[#76e1b0]">thuế chốt</strong> (final) — không kê khai thêm thuế thu nhập khác trên phần này.
+                  Áp dụng theo Điều 5 Thông tư 32/2026/TT-BTC.
                 </p>
               </div>
               <div className="border-l-2 border-[#f0c97a] pl-3">
@@ -649,16 +669,33 @@ function Explanation({ result }: ExplanationProps) {
                 <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
                   {S.otherFormula}
                 </p>
-                {firstOther ? (
-                  <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-                    vd: tổng bán năm − tổng mua năm × 0,1 = thuế thu nhập khác năm đó
-                  </p>
-                ) : null}
                 <p className="mt-1 text-[10px] text-[#6c8094]">
-                  {S.otherBucketNote}
+                  Tính theo <strong className="text-[#f0c97a]">năm</strong>: (tổng bán − tổng mua trước 27/03/2026) × 10%.
+                  Chỉ áp dụng nếu lợi nhuận ròng &gt; 0 <strong className="text-[#cfd9e3]">và</strong> doanh thu năm &gt; 500 triệu VND.
+                  Năm ≤ 500 triệu → miễn (characterize hộ kinh doanh, Luật Thuế TNCN 2025).
                 </p>
               </div>
             </div>
+          </section>
+
+          <section className="border-t border-[#13212e] pt-3">
+            <h3 className="terminal-label mb-2">Vì sao tách 2 khoảng thời gian?</h3>
+            <ul className="list-disc space-y-1 pl-4 text-[#8aa0b5]">
+              <li>
+                <strong className="text-[#cfd9e3]">Trước 27/03/2026:</strong> chưa có Thông tư 32.
+                Giao dịch P2P rơi vào &quot;thu nhập khác&quot; — 10% trên lợi nhuận ròng năm.
+                Có threshold miễn 500 triệu/năm nếu characterize là hộ kinh doanh.
+              </li>
+              <li>
+                <strong className="text-[#cfd9e3]">Từ 27/03/2026:</strong> Thông tư 32 hiệu lực.
+                Thuế chuyển nhượng 0,1% trên tổng giá trị bán — thuế chốt, không cần tính lợi nhuận.
+                Không kê khai thuế thu nhập khác thêm (tránh double-count).
+              </li>
+              <li>
+                <strong className="text-[#f0c97a]">Không tính kép:</strong> mỗi giao dịch chỉ chịu 1 loại thuế.
+                Giao dịch sau 27/03/2026 = 0,1%. Giao dịch trước = 10% (nếu trên threshold).
+              </li>
+            </ul>
           </section>
 
           <section className="border-t border-[#13212e] pt-3">
@@ -760,13 +797,6 @@ function PitDeclarationTable({
     if (key === sortKey) setSortDir(sortDir === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("desc"); }
   };
-  const sortArrow = (key: string) => key === sortKey ? (sortDir === "asc" ? " ↑" : " ↓") : "";
-  const Th = ({ k, label, right }: { k: string; label: string; right?: boolean }) => (
-    <th className={`${right ? "text-right " : ""}cursor-pointer hover:text-[#cfd9e3]`} onClick={() => onSort(k)}>
-      {label}{sortArrow(k)}
-    </th>
-  );
-
   return (
     <div>
       <h2 className="terminal-label mb-2 flex items-center gap-2">
@@ -777,14 +807,14 @@ function PitDeclarationTable({
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
             <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-medium select-none">
-              <Th k="date" label={S.date} />
-              <Th k="source" label="Nguồn" />
-              <Th k="pair" label={S.pair} />
-              <Th k="side" label={S.side} />
-              <Th k="gross" label={S.gross} right />
-              <Th k="bucket" label={S.bucket} />
-              <Th k="clause" label={S.clause} />
-              <Th k="taxOwed" label={S.taxOwed} right />
+              <SortableHeader sortKey="date" activeSortKey={sortKey} sortDir={sortDir} label={S.date} onSort={onSort} />
+              <SortableHeader sortKey="source" activeSortKey={sortKey} sortDir={sortDir} label="Nguồn" onSort={onSort} />
+              <SortableHeader sortKey="pair" activeSortKey={sortKey} sortDir={sortDir} label={S.pair} onSort={onSort} />
+              <SortableHeader sortKey="side" activeSortKey={sortKey} sortDir={sortDir} label={S.side} onSort={onSort} />
+              <SortableHeader sortKey="gross" activeSortKey={sortKey} sortDir={sortDir} label={S.gross} right onSort={onSort} />
+              <SortableHeader sortKey="bucket" activeSortKey={sortKey} sortDir={sortDir} label={S.bucket} onSort={onSort} />
+              <SortableHeader sortKey="clause" activeSortKey={sortKey} sortDir={sortDir} label={S.clause} onSort={onSort} />
+              <SortableHeader sortKey="taxOwed" activeSortKey={sortKey} sortDir={sortDir} label={S.taxOwed} right onSort={onSort} />
             </tr>
           </thead>
           <tbody>
@@ -844,6 +874,7 @@ function PitDeclarationTable({
                 <th className="text-right">Tổng mua</th>
                 <th className="text-right">Tổng bán</th>
                 <th className="text-right">Lợi nhuận ròng</th>
+                <th className="text-right">Miễn thuế</th>
                 <th className="text-right">Thuế chuyển nhượng 0,1%</th>
                 <th className="text-right">Thu nhập khác 10%</th>
                 <th className="text-right">Tổng thuế</th>
@@ -856,6 +887,11 @@ function PitDeclarationTable({
                   <td className="text-right text-[#67a9f5]">{formatAmount(y.boughtVnd, "VND")}</td>
                   <td className="text-right text-[#ff8972]">{formatAmount(y.soldVnd, "VND")}</td>
                   <td className={`text-right ${y.netVnd > 0 ? "text-[#76e1b0]" : "text-[#6c8094]"}`}>{formatAmount(y.netVnd, "VND")}</td>
+                  <td className="text-right">
+                    {y.underThreshold
+                      ? <span className="text-[#76e1b0]" title="Doanh thu ≤ 500 triệu VND → miễn thuế TNCN nếu characterize là hộ kinh doanh">✓ ≤500tr</span>
+                      : <span className="text-[#ff8972]" title="Doanh thu > 500 triệu VND → chịu thuế">&gt;500tr</span>}
+                  </td>
                   <td className="text-right text-[#76e1b0]">{formatAmount(y.transferTax, "VND")}</td>
                   <td className="text-right text-[#f0c97a]">{formatAmount(y.otherIncomeTax, "VND")}</td>
                   <td className="text-right font-semibold text-[#76e1b0]">{formatAmount(y.totalTax, "VND")}</td>
@@ -863,6 +899,11 @@ function PitDeclarationTable({
               ))}
             </tbody>
           </table>
+          <div className="mt-3 space-y-1 text-[10px] leading-relaxed text-[#6c8094]">
+            <p><strong className="text-[#8aa0b5]">Thuế chuyển nhượng 0,1%</strong> — áp dụng trên tổng giá trị bán từ 27/03/2026. Đây là thuế <strong className="text-[#76e1b0]">chốt</strong> (final) theo Điều 5 Thông tư 32/2026/TT-BTC — không kê khai thêm thuế thu nhập khác trên phần này.</p>
+            <p><strong className="text-[#8aa0b5]">Thuế thu nhập khác 10%</strong> — áp dụng trên lợi nhuận ròng (bán - mua) của phần <strong className="text-[#cfd9e3]">trước</strong> 27/03/2026, nếu lợi nhuận dương. Chỉ tính cho năm có doanh thu &gt; 500 triệu VND — năm ≤ 500 triệu được miễn (characterize hộ kinh doanh theo Luật Thuế TNCN 2025).</p>
+            <p><strong className="text-[#8aa0b5]">Không tính kép</strong> — mỗi giao dịch chỉ chịu một loại thuế: hoặc 0,1% chuyển nhượng (từ 27/03/2026), hoặc 10% thu nhập khác (trước 27/03/2026). Không tính cả hai trên cùng giao dịch.</p>
+          </div>
         </div>
       ) : null}
 
@@ -920,4 +961,3 @@ function bucketLabel(bucket: string): string {
     default: return bucket;
   }
 }
-
