@@ -31,6 +31,10 @@ export const S = {
   transfer01: "Chuyển nhượng 0,1%",
   otherIncome10: "Thu nhập khác 10%",
   unmatchedSells: "Lệnh bán chưa khớp",
+  totalBuyVnd: "Tổng giá trị mua",
+  totalSellVnd: "Tổng giá trị bán",
+  buyCount: "Lệnh mua",
+  sellCount: "Lệnh bán",
 
   // Tabs
   tabDeclaration: "Tờ khai",
@@ -110,7 +114,16 @@ export const S = {
   estNotFiling:
     "Ước tính, không phải tư vấn kê khai. Phân bổ nhóm: lệnh bán từ sau 27/03/2026 → chuyển nhượng 0,1% (Điều 5 Thông tư số 32, nếu áp dụng được cho nền tảng của bạn); lệnh bán trước ngày có hiệu lực → thu nhập khác 10% (phương án dự phòng theo thuế TNCN chung). Việc áp dụng mức nào phụ thuộc vào phân loại pháp lý của bạn — xác nhận với cố vấn thuế Việt Nam.",
 
-  // Unmatched warning
+  // Unmatched warning (softened — asset gap, not parser bug)
   unmatchedWarn: (n: number) =>
-    `${n} lệnh bán không có lệnh mua khớp trong CSV (⚠). Giá vốn không xác định — thuế hiển thị tính với giá vốn bằng 0, làm phồng lợi nhuận. Thêm lịch sử giao dịch Binance (spot + convert + gửi tiền) đầy đủ để có số liệu chính xác.`,
+    `${n} lệnh bán vượt số dư tài sản có được từ lệnh mua trong CSV. Phần chênh lệch có nguồn gốc ngoài file này (giao dịch spot, convert, gửi tiền từ ví khác). Thuế hiển thị cho các lệnh này tính với giá vốn = 0 — có thể làm phồng lợi nhuận. Nếu bạn có file giao dịch spot/convert, thêm vào để tính chính xác hơn.`,
+
+  // Asset flow table
+  assetFlowTitle: "Dòng tiền theo tài sản — tổng mua/bán VND theo từng loại",
+  assetFlowNote:
+    "Hiển thị tổng giá trị mua và bán theo từng tài sản. Khoảng cách giữa mua và bán cho biết phần tài sản có nguồn gốc ngoài file CSV này.",
+  assetCol: "Tài sản",
+  boughtCol: "Tổng mua (VND)",
+  soldCol: "Tổng bán (VND)",
+  gapCol: "Chênh lệch (VND)",
 } as const;

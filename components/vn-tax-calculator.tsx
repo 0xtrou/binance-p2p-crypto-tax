@@ -324,7 +324,13 @@ function Results({
         <Card label={S.transfer01} value={formatAmount(decl.totals.transferTax, "VND")} />
         <Card label={S.otherIncome10} value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
         <Card label={S.unmatchedSells} value={String(decl.totals.unmatchedCount)} />
+        <Card label={S.totalBuyVnd} value={formatAmount(decl.totals.totalBoughtVnd, "VND")} />
+        <Card label={S.totalSellVnd} value={formatAmount(decl.totals.totalSoldVnd, "VND")} />
+        <Card label={S.buyCount} value={String(decl.totals.totalBuyCount)} />
+        <Card label={S.sellCount} value={String(decl.totals.totalSellCount)} />
       </div>
+
+      <AssetFlowTable decl={decl} />
 
       <Tabs
         tabs={[
@@ -825,6 +831,43 @@ function PitDeclarationTable({
       <p className="mt-3 text-[10px] leading-relaxed text-[#6c8094]">
         {S.estNotFiling}
       </p>
+    </div>
+  );
+}
+
+function AssetFlowTable({ decl }: { decl: ReturnType<typeof buildDeclaration> }) {
+  if (decl.assetFlows.length === 0) return null;
+  return (
+    <div>
+      <h2 className="terminal-label mb-2">{S.assetFlowTitle}</h2>
+      <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
+        <table className="w-full text-left text-xs">
+          <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
+            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
+              <th>{S.assetCol}</th>
+              <th className="text-right">{S.boughtCol}</th>
+              <th className="text-right">{S.soldCol}</th>
+              <th className="text-right">{S.gapCol}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {decl.assetFlows.map((f) => {
+              const gap = f.soldVnd - f.boughtVnd;
+              return (
+                <tr key={f.asset} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
+                  <td className="text-[#cfd9e3]">{f.asset}</td>
+                  <td className="text-right text-[#67a9f5]">{formatAmount(f.boughtVnd, "VND")}</td>
+                  <td className="text-right text-[#ff8972]">{formatAmount(f.soldVnd, "VND")}</td>
+                  <td className={`text-right ${gap > 0 ? "text-[#f0c97a]" : "text-[#6c8094]"}`}>
+                    {gap > 0 ? "+" : ""}{formatAmount(gap, "VND")}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-[#6c8094]">{S.assetFlowNote}</p>
     </div>
   );
 }

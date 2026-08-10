@@ -42,6 +42,21 @@ export interface YearBusinessNote {
   pitHigh: number;
 }
 
+export interface AssetFlow {
+  /** Tài sản cơ sở (USDT, VNDR, ETH, BTC...). */
+  asset: string;
+  /** Tổng số lượng mua (từ các lệnh BUY trong CSV). */
+  boughtQty: number;
+  /** Tổng số lượng bán (từ các lệnh SELL trong CSV). */
+  soldQty: number;
+  /** Tổng giá trị mua VND. */
+  boughtVnd: number;
+  /** Tổng giá trị bán VND. */
+  soldVnd: number;
+  /** Số lệnh bán không có đủ lệnh mua khớp (thiếu cơ sở giá vốn). */
+  unmatchedSells: number;
+}
+
 export interface DeclarationResult {
   rows: DeclarationRow[];
   totals: {
@@ -52,7 +67,15 @@ export interface DeclarationResult {
     totalCost: number;
     totalNetProfit: number;
     unmatchedCount: number;
+    /** Tổng giá trị mua tất cả tài sản, VND. */
+    totalBoughtVnd: number;
+    /** Tổng giá trị bán tất cả tài sản, VND. */
+    totalSoldVnd: number;
+    totalBuyCount: number;
+    totalSellCount: number;
   };
+  /** Dòng tiền theo từng tài sản cơ sở (gộp các cặp cùng base). */
+  assetFlows: AssetFlow[];
   businessNotes: YearBusinessNote[];
 }
 
@@ -193,8 +216,33 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
   businessNotes.sort((a, b) => a.year - b.year);
 
   const sells = rows.filter((r) => r.side === "SELL");
+  const buys = rows.filter((r) => r.side === "BUY");
   const transferRows = sells.filter((r) => r.bucket === "transfer");
   const otherRows = sells.filter((r) => r.bucket === "other-income");
+
+  // Asset-level flow (group pairs by base asset, e.g. USDTVND + USDTUSDT → USDT).
+  // Used to show honest buy/sell gap per asset in the UI.
+  const flowMap = new Map<string, AssetFlow>();
+  for (const r of rows) {
+    const asset = r.pair.replace(/VND$|USDT$|USDC$|FDUSD$|BUSD$|TUSD$|USD$|EUR$|BTC$|ETH$|BNB$/, "");
+    if (!flowMap.has(asset)) {
+      flowMap.set(asset, { asset, boughtQty: 0, soldQty: 0, boughtVnd: 0, soldVnd: 0, unmatchedSells: 0 });
+    }
+    const f = flowMap.get(asset)!;
+    if (r.side === "BUY") {
+      f.boughtVnd += r.gross;
+    } else {
+      f.soldVnd += r.gross;
+      if (r.unmatched) f.unmatchedSells += 1;
+    }
+  }
+  const assetFlows = [...flowMap.values()]
+    .map((f) => ({
+      ...f,
+      boughtVnd: roundCents(f.boughtVnd),
+      soldVnd: roundCents(f.soldVnd),
+    }))
+    .sort((a, b) => b.soldVnd - a.soldVnd);
 
   return {
     rows,
@@ -206,7 +254,12 @@ export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
       totalCost: roundCents(sells.reduce((s, r) => s + r.matchedCost, 0)),
       totalNetProfit: roundCents(sells.reduce((s, r) => s + r.netProfit, 0)),
       unmatchedCount: unmatchedCount.count,
+      totalBoughtVnd: roundCents(buys.reduce((s, r) => s + r.gross, 0)),
+      totalSoldVnd: roundCents(sells.reduce((s, r) => s + r.gross, 0)),
+      totalBuyCount: buys.length,
+      totalSellCount: sells.length,
     },
+    assetFlows,
     businessNotes,
   };
 }
