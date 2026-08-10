@@ -207,3 +207,29 @@ test("P2P row with unrecognized Order Type is skipped", () => {
   const { skipped } = parseBinanceCsv(csv);
   assert.equal(skipped[0].reason, "unrecognized side");
 });
+
+test("P2P Cancelled rows are filtered out", () => {
+  const csv = [
+    P2P_HEADER,
+    "1,Sell,USDT,VND,1000000,25000,40,,,0.08,buyer123,Completed,2026-04-01 09:00:00",
+    "2,Sell,USDT,VND,22173161,27902,794.68,,,0.05,VietNam_Pro_P2P,Cancelled,2025-11-25 10:46:57",
+  ].join("\n");
+  const { trades, skipped } = parseBinanceCsv(csv);
+  assert.equal(trades.length, 1, "only the Completed row should parse");
+  assert.equal(skipped.length, 1, "Cancelled row goes to skipped");
+  assert.match(skipped[0].reason, /cancelled order/i);
+  assert.equal(trades[0].grossValue, 1000000);
+});
+
+test("Order History canceled/expired rows are filtered out", () => {
+  const csv = [
+    ORDER_HEADER,
+    "2026-03-28 10:00:00,BTCUSDT,LIMIT,SELL,42000,42000,0.001,0.001,42.00,FILLED",
+    "2026-03-28 11:00:00,BTCUSDT,LIMIT,SELL,42000,42000,0.001,0.001,42.00,CANCELED",
+    "2026-03-28 12:00:00,BTCUSDT,LIMIT,SELL,42000,42000,0.001,0.001,42.00,EXPIRED",
+  ].join("\n");
+  const { trades, skipped } = parseBinanceCsv(csv);
+  assert.equal(trades.length, 1, "only FILLED row parses");
+  assert.equal(skipped.length, 2);
+  assert.match(skipped[0].reason, /cancelled order/i);
+});

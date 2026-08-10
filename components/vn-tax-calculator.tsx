@@ -770,7 +770,7 @@ function PitSummary({
   return (
     <div>
       <h2 className="terminal-label mb-2 flex items-center gap-2">
-        <FileSpreadsheet size={13} /> PIT declaration summary — final VND payout per year per bucket
+        <FileSpreadsheet size={13} /> PIT declaration summary — VND per year per bucket (CSV-only cost basis)
       </h2>
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
@@ -780,7 +780,6 @@ function PitSummary({
               <th className="text-right">Transfer 0.1%</th>
               <th className="text-right">Business 15-20%</th>
               <th className="text-right">Other income 10%</th>
-              <th className="text-right">Most defensible</th>
             </tr>
           </thead>
           <tbody>
@@ -792,7 +791,6 @@ function PitSummary({
               const bizLow = b?.pitRange[0] ?? 0;
               const bizHigh = b?.pitRange[1] ?? 0;
               const oth = o?.pitRange[0] ?? 0;
-              const def = transfer > 0 ? transfer : oth;
               return (
                 <tr key={y} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
                   <td className="text-[#8aa0b5]">{y}</td>
@@ -801,7 +799,6 @@ function PitSummary({
                     {b ? (bizLow === 0 && bizHigh === 0 ? "exempt" : `${formatAmount(bizLow)}–${formatAmount(bizHigh, "VND")}`) : "—"}
                   </td>
                   <td className="text-right text-[#67a9f5]">{oth > 0 ? formatAmount(oth, "VND") : "—"}</td>
-                  <td className="text-right text-[#76e1b0]">{formatAmount(def, "VND")}</td>
                 </tr>
               );
             })}
@@ -814,13 +811,16 @@ function PitSummary({
                 {grandBizLow === 0 && grandBizHigh === 0 ? "0.00" : `${formatAmount(grandBizLow)}–${formatAmount(grandBizHigh, "VND")}`}
               </td>
               <td className="text-right text-[#67a9f5]">{formatAmount(grandOther, "VND")}</td>
-              <td className="text-right text-[#76e1b0]">{formatAmount(grandTransfer + grandOther, "VND")}</td>
             </tr>
           </tfoot>
         </table>
       </div>
       <p className="mt-2 text-[10px] leading-relaxed text-[#6c8094]">
-        <strong className="text-[#8aa0b5]">Most defensible</strong> = transfer tax (0.1%) if the year has post-27-Mar-2026 sells, else other-income 10% on FIFO net profit. <strong className="text-[#f0c97a]">Not legal advice</strong> — pick the bucket with a VN tax advisor based on your characterization. Business 15-20% only above 500M VND annual revenue.
+        <strong className="text-[#f0c97a]">These numbers use only the cost basis in your CSV.</strong> If you have
+        buys outside this export (spot trades, deposits, other exchanges), the Business and Other-income columns
+        overstate your profit. Add your full acquisition history for accurate net-profit figures. Transfer 0.1%
+        is gross — unaffected by cost basis. Which bucket applies to you is a legal characterization; the tool
+        computes all three, it does not pick.
       </p>
     </div>
   );

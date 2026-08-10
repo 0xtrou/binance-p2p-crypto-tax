@@ -139,6 +139,16 @@ function parseRow(
   }
   if (!side) return { reason: "unrecognized side" };
 
+  // Filter out cancelled / non-completed orders. P2P rows carry Status
+  // ("Completed" / "Cancelled"); Order/Trade History uses lowercase "status"
+  // ("filled" / "canceled" / "expired"). A cancelled order never settled —
+  // no transfer happened, so it must not enter tax or revenue.
+  const statusCol = format === "p2p-history" ? "Status" : "status";
+  const statusVal = (raw[statusCol] ?? "").toLowerCase().trim();
+  if (statusVal === "cancelled" || statusVal === "canceled" || statusVal === "expired") {
+    return { reason: `cancelled order (${raw[statusCol]})` };
+  }
+
   // Base / quote / gross value differ across formats.
   let base: string;
   let quote: string;
