@@ -82,6 +82,12 @@ export const CLAUSES = {
     effective: "As of 2026",
     text: 'Whether full-time crypto trading (sole revenue) pays ONLY the 0.1% final transfer tax, or ALSO the 15-20% business-income PIT above 500M revenue, is NOT addressed by Circular 32. The 0.1% is "final" for securities; crypto-as-livelihood is untested. Consult a VN tax advisor.',
   },
+  otherIncome: {
+    id: "PIT Law (thu nhập khác)",
+    instrument: "Law on Personal Income Tax — Other Income",
+    effective: "General PIT framework",
+    text: 'Income not specifically categorized falls under "other income" (thu nhập khác) at a flat 10% on net profit. The fallback for crypto cashouts Circular 32 does not reach: foreign exchanges (Binance), pre-pilot sells, or any case where no licensed provider withholds the 0.1%. No 500M exemption applies.',
+  },
 } as const;
 
 /** Classification bucket for a trade. */

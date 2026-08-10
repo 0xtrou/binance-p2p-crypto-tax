@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, BookOpen, Briefcase, FileUp, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, BookOpen, Briefcase, Coins, FileUp, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
-import { computeBusinessIncome } from "@/lib/vn-tax/business-income";
+import { computeBusinessIncome, computeOtherIncome } from "@/lib/vn-tax/business-income";
 import { computeTax } from "@/lib/vn-tax/compute-tax";
 import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
@@ -229,6 +229,8 @@ function Results({
       <Explanation result={result} firstQuote={firstQuote} />
 
       <BusinessIncome result={result} />
+
+      <OtherIncome result={result} />
 
       <ComplianceTable result={result} />
 
@@ -629,4 +631,96 @@ function bizStatusColor(status: string): string {
     default:
       return "text-[#6c8094]";
   }
+}
+
+function OtherIncome({
+  result,
+}: {
+  result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
+}) {
+  const other = useMemo(() => computeOtherIncome(result.parsed.trades), [result]);
+  const [open, setOpen] = useState(true);
+  const hasData = other.perYear.length > 0;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 border border-[#1b2d3e] bg-[#0a1622] px-4 py-2 text-left text-xs font-semibold text-[#8aa0b5]"
+      >
+        <Coins size={13} />
+        Other income PIT (thu nhập khác) — 10% flat on net profit, fallback for Binance/foreign platforms
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+      {open ? (
+        <div className="mt-2 space-y-4 border border-[#1b2d3e] bg-[#0a1622] px-4 py-4 text-xs">
+          <div className="rounded-sm border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-[11px] leading-relaxed text-[#f0c97a]">
+            <p className="flex items-center gap-2 font-semibold text-[#f0c97a]">
+              <AlertTriangle size={13} /> When to use this number
+            </p>
+            <p className="mt-1 text-[#c2a05a]">&quot;{CLAUSES.otherIncome.text}&quot;</p>
+            <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
+              {CLAUSES.otherIncome.id} · {CLAUSES.otherIncome.instrument} · {CLAUSES.otherIncome.effective}
+            </p>
+          </div>
+
+          {!hasData ? (
+            <p className="text-[#6c8094]">No sells to evaluate.</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
+                    <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
+                      <th>Year</th>
+                      <th>Pair</th>
+                      <th className="text-right">Revenue</th>
+                      <th className="text-right">Cost (FIFO)</th>
+                      <th className="text-right">Net profit</th>
+                      <th className="text-right">PIT (10%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {other.perYear.map((y, i) => (
+                      <tr key={i} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
+                        <td className="text-[#8aa0b5]">{y.year}</td>
+                        <td className="text-[#cfd9e3]">{y.pair}</td>
+                        <td className="text-right text-[#cfd9e3]">{formatAmount(y.revenue, y.quote)}</td>
+                        <td className="text-right text-[#8aa0b5]">{formatAmount(y.costBasis, y.quote)}</td>
+                        <td className={`text-right ${y.netProfit >= 0 ? "text-[#6bcfa6]" : "text-[#ff8972]"}`}>
+                          {formatAmount(y.netProfit, y.quote)}
+                        </td>
+                        <td className="text-right text-[#76e1b0]">{formatAmount(y.pitRange[0], y.quote)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
+                      <td colSpan={5} className="text-right text-[#8aa0b5]">Total other-income PIT (10%)</td>
+                      <td className="text-right text-[#76e1b0]">{formatAmount(other.totals.pit)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {other.unmatchedWarnings.length > 0 ? (
+                <p className="text-[10px] text-[#ff8972]">
+                  {other.unmatchedWarnings.length} sell(s) lacked buy lots — full proceeds counted as profit,
+                  overstating net income. Include complete buy history for accuracy.
+                </p>
+              ) : null}
+
+              <p className="border-t border-[#13212e] pt-3 text-[10px] leading-relaxed text-[#8aa0b5]">
+                <strong className="text-[#f0c97a]">No threshold exemption.</strong> Unlike business income (500M VND),
+                other income has no revenue floor — PIT applies from the first đồng of net profit. This is the
+                fallback reading for sells the Circular 32 licensed-provider flow doesn&apos;t reach. Pick between
+                this and the 0.1% transfer tax with a VN tax advisor based on your characterization.
+              </p>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
 }

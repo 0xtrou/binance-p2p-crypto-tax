@@ -187,3 +187,116 @@ function roundCents(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// "Other income" (thu nhập khác) PIT — flat 10% on net profit, no threshold.
+// Applied to crypto cashouts not covered by the licensed-provider 0.1% flow
+// (e.g. Binance, foreign platforms, pre-pilot sells). General PIT Law fallback.
+// Shares the FIFO engine with computeBusinessIncome but strips the 500M
+// threshold (it doesn't apply to "other income") and applies a flat 10%.
+
+/** Flat rate on net profit for "other income" under general PIT Law. */
+export const OTHER_INCOME_RATE = 0.1;
+
+export interface OtherIncomeResult {
+  perYear: YearResult[];
+  totals: {
+    revenue: number;
+    netProfit: number;
+    pit: number;
+  };
+  unmatchedWarnings: { date: Date; pair: string; qtyMissing: number }[];
+}
+
+/**
+ * Compute "other income" 10% PIT using FIFO net profit, no exemption threshold.
+ * Mirrors computeBusinessIncome's lot matching but applies a flat 10% to net
+ * profit whenever positive, for every (year, pair) — no 500M carve-out.
+ *
+ * Use this for sells the Circular 32 licensed-provider flow does not reach:
+ * foreign-exchange trades (Binance), pre-pilot sells, or any case where you
+ * self-declare under general PIT rather than rely on provider withholding.
+ */
+export function computeOtherIncome(trades: ParsedTrade[]): OtherIncomeResult {
+  const byPair = new Map<string, ParsedTrade[]>();
+  for (const t of trades) {
+    if (!byPair.has(t.pair)) byPair.set(t.pair, []);
+    byPair.get(t.pair)!.push(t);
+  }
+
+  const perYear: YearResult[] = [];
+  const unmatchedWarnings: OtherIncomeResult["unmatchedWarnings"] = [];
+
+  for (const [pair, pairTrades] of byPair) {
+    pairTrades.sort((a, b) => a.date.getTime() - b.date.getTime());
+    const lots: Lot[] = [];
+    const yearAgg = new Map<number, { revenue: number; costBasis: number }>();
+
+    for (const t of pairTrades) {
+      const year = t.date.getUTCFullYear();
+      if (!yearAgg.has(year)) yearAgg.set(year, { revenue: 0, costBasis: 0 });
+      const agg = yearAgg.get(year)!;
+
+      if (t.side === "BUY") {
+        if (t.quantity === null) continue;
+        const unitCost = t.grossValue / t.quantity;
+        lots.push({ date: t.date, unitCost, qty: t.quantity });
+        continue;
+      }
+
+      if (t.quantity === null) {
+        agg.revenue += t.grossValue;
+        unmatchedWarnings.push({ date: t.date, pair: t.pair, qtyMissing: 0 });
+        continue;
+      }
+      let remaining = t.quantity;
+      let matchedCost = 0;
+      while (remaining > EPSILON && lots.length > 0) {
+        const lot = lots[0];
+        const take = Math.min(remaining, lot.qty);
+        matchedCost += take * lot.unitCost;
+        lot.qty -= take;
+        remaining -= take;
+        if (lot.qty <= EPSILON) lots.shift();
+      }
+      if (remaining > EPSILON) {
+        unmatchedWarnings.push({ date: t.date, pair: t.pair, qtyMissing: remaining });
+      }
+      agg.revenue += t.grossValue;
+      agg.costBasis += matchedCost;
+    }
+
+    const quote = pairTrades[0].quote;
+    for (const [year, agg] of yearAgg) {
+      const netProfit = agg.revenue - agg.costBasis;
+      const base = Math.max(0, netProfit);
+      const pit = roundCents(base * OTHER_INCOME_RATE);
+      perYear.push({
+        year,
+        pair,
+        quote,
+        revenue: roundCents(agg.revenue),
+        costBasis: roundCents(agg.costBasis),
+        netProfit: roundCents(netProfit),
+        // Threshold concept doesn't apply to "other income" — but the field is
+        // part of the shared YearResult shape; mark not-applicable.
+        thresholdApplicable: false,
+        status: "taxable",
+        pitRange: [pit, pit],
+      });
+    }
+  }
+
+  perYear.sort((a, b) =>
+    a.year !== b.year ? a.year - b.year : a.pair.localeCompare(b.pair),
+  );
+
+  return {
+    perYear,
+    totals: {
+      revenue: roundCents(perYear.reduce((s, r) => s + r.revenue, 0)),
+      netProfit: roundCents(perYear.reduce((s, r) => s + r.netProfit, 0)),
+      pit: roundCents(perYear.reduce((s, r) => s + r.pitRange[0], 0)),
+    },
+    unmatchedWarnings,
+  };
+}
+
