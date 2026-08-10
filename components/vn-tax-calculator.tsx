@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BookOpen, Briefcase, Coins, FileUp, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, BookOpen, Briefcase, Coins, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { computeBusinessIncome, computeOtherIncome } from "@/lib/vn-tax/business-income";
 import { computeTax } from "@/lib/vn-tax/compute-tax";
@@ -231,6 +231,8 @@ function Results({
       <BusinessIncome result={result} />
 
       <OtherIncome result={result} />
+
+      <PitSummary result={result} />
 
       <ComplianceTable result={result} />
 
@@ -721,6 +723,105 @@ function OtherIncome({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PitSummary({
+  result,
+}: {
+  result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
+}) {
+  const biz = useMemo(() => computeBusinessIncome(result.parsed.trades), [result]);
+  const other = useMemo(() => computeOtherIncome(result.parsed.trades), [result]);
+
+  // Bucket 1 (0.1% transfer) only applies post 27 Mar 2026 — attribute by sell year.
+  const transferByYear = new Map<number, { vnd: number; count: number }>();
+  for (const t of result.tax.taxable) {
+    const y = t.date.getUTCFullYear();
+    const cur = transferByYear.get(y) ?? { vnd: 0, count: 0 };
+    cur.vnd += t.tax;
+    cur.count += 1;
+    transferByYear.set(y, cur);
+  }
+
+  const yearsSet = new Set<number>();
+  for (const y of transferByYear.keys()) yearsSet.add(y);
+  for (const r of biz.perYear) if (r.quote === "VND") yearsSet.add(r.year);
+  for (const r of other.perYear) if (r.quote === "VND") yearsSet.add(r.year);
+  const years = [...yearsSet].sort();
+
+  const grandTransfer = [...transferByYear.values()].reduce((s, r) => s + r.vnd, 0);
+  const grandBizLow = biz.perYear.filter((r) => r.quote === "VND").reduce((s, r) => s + r.pitRange[0], 0);
+  const grandBizHigh = biz.perYear.filter((r) => r.quote === "VND").reduce((s, r) => s + r.pitRange[1], 0);
+  const grandOther = other.perYear.filter((r) => r.quote === "VND").reduce((s, r) => s + r.pitRange[0], 0);
+
+  if (years.length === 0) {
+    return (
+      <div>
+        <h2 className="terminal-label mb-2 flex items-center gap-2">
+          <FileSpreadsheet size={13} /> PIT declaration summary
+        </h2>
+        <p className="text-xs text-[#6c8094]">No VND trades to declare.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="terminal-label mb-2 flex items-center gap-2">
+        <FileSpreadsheet size={13} /> PIT declaration summary — final VND payout per year per bucket
+      </h2>
+      <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
+        <table className="w-full text-left text-xs">
+          <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
+            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
+              <th>Year</th>
+              <th className="text-right">Transfer 0.1%</th>
+              <th className="text-right">Business 15-20%</th>
+              <th className="text-right">Other income 10%</th>
+              <th className="text-right">Most defensible</th>
+            </tr>
+          </thead>
+          <tbody>
+            {years.map((y) => {
+              const t = transferByYear.get(y);
+              const b = biz.perYear.find((r) => r.year === y && r.quote === "VND");
+              const o = other.perYear.find((r) => r.year === y && r.quote === "VND");
+              const transfer = t?.vnd ?? 0;
+              const bizLow = b?.pitRange[0] ?? 0;
+              const bizHigh = b?.pitRange[1] ?? 0;
+              const oth = o?.pitRange[0] ?? 0;
+              const def = transfer > 0 ? transfer : oth;
+              return (
+                <tr key={y} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
+                  <td className="text-[#8aa0b5]">{y}</td>
+                  <td className="text-right text-[#76e1b0]">{transfer > 0 ? formatAmount(transfer, "VND") : "—"}</td>
+                  <td className="text-right text-[#f0c97a]">
+                    {b ? (bizLow === 0 && bizHigh === 0 ? "exempt" : `${formatAmount(bizLow)}–${formatAmount(bizHigh, "VND")}`) : "—"}
+                  </td>
+                  <td className="text-right text-[#67a9f5]">{oth > 0 ? formatAmount(oth, "VND") : "—"}</td>
+                  <td className="text-right text-[#76e1b0]">{formatAmount(def, "VND")}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
+              <td className="text-[#8aa0b5]">Total</td>
+              <td className="text-right text-[#76e1b0]">{formatAmount(grandTransfer, "VND")}</td>
+              <td className="text-right text-[#f0c97a]">
+                {grandBizLow === 0 && grandBizHigh === 0 ? "0.00" : `${formatAmount(grandBizLow)}–${formatAmount(grandBizHigh, "VND")}`}
+              </td>
+              <td className="text-right text-[#67a9f5]">{formatAmount(grandOther, "VND")}</td>
+              <td className="text-right text-[#76e1b0]">{formatAmount(grandTransfer + grandOther, "VND")}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-[#6c8094]">
+        <strong className="text-[#8aa0b5]">Most defensible</strong> = transfer tax (0.1%) if the year has post-27-Mar-2026 sells, else other-income 10% on FIFO net profit. <strong className="text-[#f0c97a]">Not legal advice</strong> — pick the bucket with a VN tax advisor based on your characterization. Business 15-20% only above 500M VND annual revenue.
+      </p>
     </div>
   );
 }
