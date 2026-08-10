@@ -300,7 +300,10 @@ function parseRemitanoRow(raw: Record<string, string>): { trade: ParsedTrade } |
 /** Parse a raw CSV string into validated trades + a skipped audit.
  *  Supports Binance (Order/Trade/P2P History) and Remitano trade exports. */
 export function parseBinanceCsv(input: string): ParseResult {
-  const text = input.trim();
+  // Strip UTF-8 BOM (U+FEFF) if present — Binance/Excel exports often prepend
+  // one, which would shift the first header cell and break format detection.
+  const bomStripped = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
+  const text = bomStripped.trim();
   if (text === "") return { trades: [], skipped: [], format: null };
 
   const records = parseCsv(text);

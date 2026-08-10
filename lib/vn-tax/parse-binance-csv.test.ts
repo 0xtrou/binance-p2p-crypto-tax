@@ -142,6 +142,20 @@ test("handles CRLF line endings", () => {
   assert.equal(trades.length, 1);
 });
 
+test("strips UTF-8 BOM from Binance/Excel exports", () => {
+  // Excel and Binance prepend U+FEFF to the first byte. Without stripping,
+  // the header cell becomes "\uFEFFOrder Number" and format detection fails.
+  const csv = "\uFEFF" + [
+    P2P_HEADER,
+    "22919067578433675264,Buy,USDT,VND,2300000,26426,87.03,,,0.08,GiaoDichTuDong_247,Completed,2026-08-07 22:33:10",
+  ].join("\n");
+  const { trades, skipped, format } = parseBinanceCsv(csv);
+  assert.equal(format, "p2p-history");
+  assert.equal(skipped.length, 0);
+  assert.equal(trades.length, 1);
+  assert.equal(trades[0].grossValue, 2300000);
+});
+
 test("quoted fields with embedded commas parse correctly", () => {
   // status values sometimes contain commas in some export variants.
   const csv = [
