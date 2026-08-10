@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, BookOpen, Briefcase, Coins, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, BookOpen, FileUp, FileSpreadsheet, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useMemo, useState } from "react";
-import { computeBusinessIncome, computeOtherIncome } from "@/lib/vn-tax/business-income";
+import { buildDeclaration } from "@/lib/vn-tax/declaration";
 import { computeTax } from "@/lib/vn-tax/compute-tax";
 import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
@@ -228,11 +228,7 @@ function Results({
 
       <Explanation result={result} firstQuote={firstQuote} />
 
-      <BusinessIncome result={result} />
-
-      <OtherIncome result={result} />
-
-      <PitSummary result={result} />
+      <PitDeclarationTable result={result} />
 
       <ComplianceTable result={result} />
 
@@ -350,8 +346,10 @@ function ComplianceTable({
 function bucketColor(bucket: string): string {
   switch (bucket) {
     case "taxable":
+    case "transfer":
       return "text-[#76e1b0] font-semibold";
     case "grey-zone":
+    case "other-income":
       return "text-[#f0c97a]";
     case "buy":
       return "text-[#67a9f5]";
@@ -500,328 +498,165 @@ function ClauseRow({
   );
 }
 
-function BusinessIncome({
+function PitDeclarationTable({
   result,
 }: {
   result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
 }) {
-  const biz = useMemo(() => computeBusinessIncome(result.parsed.trades), [result]);
-  const [open, setOpen] = useState(true);
-  const hasData = biz.perYear.length > 0;
-  const totalLow = biz.totals.pitLow;
-  const totalHigh = biz.totals.pitHigh;
-  const anyVndTaxable = biz.perYear.some((y) => y.status === "taxable");
-  const anyUnknownFx = biz.perYear.some((y) => y.status === "unknown-fx");
+  const decl = useMemo(() => buildDeclaration(result.parsed.trades), [result]);
+  const [showAll, setShowAll] = useState(false);
 
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 border border-[#1b2d3e] bg-[#0a1622] px-4 py-2 text-left text-xs font-semibold text-[#8aa0b5]"
-      >
-        <Briefcase size={13} />
-        Business-income PIT (if trading is your livelihood) — 15-20% on net profit above 500M VND revenue
-        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-      </button>
-      {open ? (
-        <div className="mt-2 space-y-4 border border-[#1b2d3e] bg-[#0a1622] px-4 py-4 text-xs">
-          <div className="rounded-sm border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-[11px] leading-relaxed text-[#f0c97a]">
-            <p className="flex items-center gap-2 font-semibold text-[#f0c97a]">
-              <AlertTriangle size={13} /> Unresolved — read before relying on this number
-            </p>
-            <p className="mt-1 text-[#c2a05a]">&quot;{CLAUSES.bizCharacterization.text}&quot;</p>
-            <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-              {CLAUSES.bizCharacterization.id} · {CLAUSES.bizCharacterization.effective}
-            </p>
-          </div>
-
-          {!hasData ? (
-            <p className="text-[#6c8094]">No sells to evaluate.</p>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
-                    <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
-                      <th>Year</th>
-                      <th>Pair</th>
-                      <th className="text-right">Revenue</th>
-                      <th className="text-right">Cost (FIFO)</th>
-                      <th className="text-right">Net profit</th>
-                      <th>Status</th>
-                      <th className="text-right">PIT (15-20%)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {biz.perYear.map((y, i) => (
-                      <tr key={i} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-                        <td className="text-[#8aa0b5]">{y.year}</td>
-                        <td className="text-[#cfd9e3]">{y.pair}</td>
-                        <td className="text-right text-[#cfd9e3]">{formatAmount(y.revenue, y.quote)}</td>
-                        <td className="text-right text-[#8aa0b5]">{formatAmount(y.costBasis, y.quote)}</td>
-                        <td className={`text-right ${y.netProfit >= 0 ? "text-[#6bcfa6]" : "text-[#ff8972]"}`}>
-                          {formatAmount(y.netProfit, y.quote)}
-                        </td>
-                        <td>
-                          <span className={bizStatusColor(y.status)}>{y.status}</span>
-                        </td>
-                        <td className="text-right text-[#76e1b0]">
-                          {y.pitRange[0] === 0 && y.pitRange[1] === 0
-                            ? "0.00"
-                            : `${formatAmount(y.pitRange[0])}–${formatAmount(y.pitRange[1], y.quote)}`}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-                      <td colSpan={6} className="text-right text-[#8aa0b5]">Estimated business-income PIT (total)</td>
-                      <td className="text-right text-[#76e1b0]">
-                        {totalLow === 0 && totalHigh === 0 ? "0.00" : `${formatAmount(totalLow)}–${formatAmount(totalHigh)}`}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {anyVndTaxable ? (
-                <p className="text-[10px] text-[#6c8094]">
-                  VND revenue exceeded 500M in at least one year → 15-20% PIT on net profit applies under the
-                  business characterization. <strong className="text-[#f0c97a]">This is SEPARATE from the 0.1% transfer tax above.</strong>
-                </p>
-              ) : null}
-
-              {anyUnknownFx ? (
-                <p className="text-[10px] text-[#f0c97a]">
-                  Non-VND quotes detected (e.g. USDT). The 500M VND revenue threshold cannot be checked without
-                  FX history — per-quote net profit shown for reference only. Convert to VND at year-end rates
-                  to determine if you cross the threshold.
-                </p>
-              ) : null}
-
-              {biz.unmatchedWarnings.length > 0 ? (
-                <p className="text-[10px] text-[#ff8972]">
-                  {biz.unmatchedWarnings.length} sell(s) could not be fully matched to a buy lot (insufficient
-                  purchase history in the export). Their full proceeds counted as profit, likely overstating
-                  net income. Include your full buy history for an accurate basis.
-                </p>
-              ) : null}
-
-              <div className="border-t border-[#13212e] pt-3 text-[11px] text-[#8aa0b5]">
-                <p className="mb-1 terminal-label">Legal basis</p>
-                <ClauseRow step="VND 500M/year revenue exemption threshold" clause={CLAUSES.bizExemption} />
-                <div className="mt-2" />
-                <ClauseRow step="15-20% on net profit above threshold" clause={CLAUSES.bizRate} />
-              </div>
-            </>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function bizStatusColor(status: string): string {
-  switch (status) {
-    case "exempt":
-      return "text-[#76e1b0]";
-    case "taxable":
-      return "text-[#ff8972]";
-    case "unknown-fx":
-      return "text-[#f0c97a]";
-    default:
-      return "text-[#6c8094]";
-  }
-}
-
-function OtherIncome({
-  result,
-}: {
-  result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
-}) {
-  const other = useMemo(() => computeOtherIncome(result.parsed.trades), [result]);
-  const [open, setOpen] = useState(true);
-  const hasData = other.perYear.length > 0;
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 border border-[#1b2d3e] bg-[#0a1622] px-4 py-2 text-left text-xs font-semibold text-[#8aa0b5]"
-      >
-        <Coins size={13} />
-        Other income PIT (thu nhập khác) — 10% flat on net profit, fallback for Binance/foreign platforms
-        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-      </button>
-      {open ? (
-        <div className="mt-2 space-y-4 border border-[#1b2d3e] bg-[#0a1622] px-4 py-4 text-xs">
-          <div className="rounded-sm border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-[11px] leading-relaxed text-[#f0c97a]">
-            <p className="flex items-center gap-2 font-semibold text-[#f0c97a]">
-              <AlertTriangle size={13} /> When to use this number
-            </p>
-            <p className="mt-1 text-[#c2a05a]">&quot;{CLAUSES.otherIncome.text}&quot;</p>
-            <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
-              {CLAUSES.otherIncome.id} · {CLAUSES.otherIncome.instrument} · {CLAUSES.otherIncome.effective}
-            </p>
-          </div>
-
-          {!hasData ? (
-            <p className="text-[#6c8094]">No sells to evaluate.</p>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
-                    <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
-                      <th>Year</th>
-                      <th>Pair</th>
-                      <th className="text-right">Revenue</th>
-                      <th className="text-right">Cost (FIFO)</th>
-                      <th className="text-right">Net profit</th>
-                      <th className="text-right">PIT (10%)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {other.perYear.map((y, i) => (
-                      <tr key={i} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-                        <td className="text-[#8aa0b5]">{y.year}</td>
-                        <td className="text-[#cfd9e3]">{y.pair}</td>
-                        <td className="text-right text-[#cfd9e3]">{formatAmount(y.revenue, y.quote)}</td>
-                        <td className="text-right text-[#8aa0b5]">{formatAmount(y.costBasis, y.quote)}</td>
-                        <td className={`text-right ${y.netProfit >= 0 ? "text-[#6bcfa6]" : "text-[#ff8972]"}`}>
-                          {formatAmount(y.netProfit, y.quote)}
-                        </td>
-                        <td className="text-right text-[#76e1b0]">{formatAmount(y.pitRange[0], y.quote)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-                      <td colSpan={5} className="text-right text-[#8aa0b5]">Total other-income PIT (10%)</td>
-                      <td className="text-right text-[#76e1b0]">{formatAmount(other.totals.pit)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {other.unmatchedWarnings.length > 0 ? (
-                <p className="text-[10px] text-[#ff8972]">
-                  {other.unmatchedWarnings.length} sell(s) lacked buy lots — full proceeds counted as profit,
-                  overstating net income. Include complete buy history for accuracy.
-                </p>
-              ) : null}
-
-              <p className="border-t border-[#13212e] pt-3 text-[10px] leading-relaxed text-[#8aa0b5]">
-                <strong className="text-[#f0c97a]">No threshold exemption.</strong> Unlike business income (500M VND),
-                other income has no revenue floor — PIT applies from the first đồng of net profit. This is the
-                fallback reading for sells the Circular 32 licensed-provider flow doesn&apos;t reach. Pick between
-                this and the 0.1% transfer tax with a VN tax advisor based on your characterization.
-              </p>
-            </>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PitSummary({
-  result,
-}: {
-  result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
-}) {
-  const biz = useMemo(() => computeBusinessIncome(result.parsed.trades), [result]);
-  const other = useMemo(() => computeOtherIncome(result.parsed.trades), [result]);
-
-  // Bucket 1 (0.1% transfer) only applies post 27 Mar 2026 — attribute by sell year.
-  const transferByYear = new Map<number, { vnd: number; count: number }>();
-  for (const t of result.tax.taxable) {
-    const y = t.date.getUTCFullYear();
-    const cur = transferByYear.get(y) ?? { vnd: 0, count: 0 };
-    cur.vnd += t.tax;
-    cur.count += 1;
-    transferByYear.set(y, cur);
-  }
-
-  const yearsSet = new Set<number>();
-  for (const y of transferByYear.keys()) yearsSet.add(y);
-  for (const r of biz.perYear) if (r.quote === "VND") yearsSet.add(r.year);
-  for (const r of other.perYear) if (r.quote === "VND") yearsSet.add(r.year);
-  const years = [...yearsSet].sort();
-
-  const grandTransfer = [...transferByYear.values()].reduce((s, r) => s + r.vnd, 0);
-  const grandBizLow = biz.perYear.filter((r) => r.quote === "VND").reduce((s, r) => s + r.pitRange[0], 0);
-  const grandBizHigh = biz.perYear.filter((r) => r.quote === "VND").reduce((s, r) => s + r.pitRange[1], 0);
-  const grandOther = other.perYear.filter((r) => r.quote === "VND").reduce((s, r) => s + r.pitRange[0], 0);
-
-  if (years.length === 0) {
+  if (decl.rows.length === 0) {
     return (
       <div>
         <h2 className="terminal-label mb-2 flex items-center gap-2">
-          <FileSpreadsheet size={13} /> PIT declaration summary
+          <FileSpreadsheet size={13} /> PIT declaration
         </h2>
-        <p className="text-xs text-[#6c8094]">No VND trades to declare.</p>
+        <p className="text-xs text-[#6c8094]">No trades to declare.</p>
       </div>
     );
   }
 
+  const visibleRows = showAll ? decl.rows : decl.rows.slice(0, 12);
+  const hiddenCount = decl.rows.length - visibleRows.length;
+
   return (
     <div>
       <h2 className="terminal-label mb-2 flex items-center gap-2">
-        <FileSpreadsheet size={13} /> PIT declaration summary — VND per year per bucket (CSV-only cost basis)
+        <FileSpreadsheet size={13} /> PIT declaration — one row per trade, matched clause, VND owed
       </h2>
+
+      <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card label="Total PIT owed" value={formatAmount(decl.totals.totalTax, "VND")} accent />
+        <Card label="Transfer 0.1%" value={formatAmount(decl.totals.transferTax, "VND")} />
+        <Card label="Other income 10%" value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
+        <Card label="Unmatched sells" value={String(decl.totals.unmatchedCount)} />
+      </div>
+
       <div className="overflow-x-auto border border-[#1b2d3e] bg-[#0a1622]">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-[#1b2d3e] text-[#6c8094]">
-            <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:font-medium">
-              <th>Year</th>
-              <th className="text-right">Transfer 0.1%</th>
-              <th className="text-right">Business 15-20%</th>
-              <th className="text-right">Other income 10%</th>
+            <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:font-medium">
+              <th>Date</th>
+              <th>Pair</th>
+              <th>Side</th>
+              <th className="text-right">Gross</th>
+              <th className="text-right">Cost (FIFO)</th>
+              <th className="text-right">Net</th>
+              <th>Bucket</th>
+              <th>Clause</th>
+              <th className="text-right">Tax owed</th>
             </tr>
           </thead>
           <tbody>
-            {years.map((y) => {
-              const t = transferByYear.get(y);
-              const b = biz.perYear.find((r) => r.year === y && r.quote === "VND");
-              const o = other.perYear.find((r) => r.year === y && r.quote === "VND");
-              const transfer = t?.vnd ?? 0;
-              const bizLow = b?.pitRange[0] ?? 0;
-              const bizHigh = b?.pitRange[1] ?? 0;
-              const oth = o?.pitRange[0] ?? 0;
-              return (
-                <tr key={y} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-                  <td className="text-[#8aa0b5]">{y}</td>
-                  <td className="text-right text-[#76e1b0]">{transfer > 0 ? formatAmount(transfer, "VND") : "—"}</td>
-                  <td className="text-right text-[#f0c97a]">
-                    {b ? (bizLow === 0 && bizHigh === 0 ? "exempt" : `${formatAmount(bizLow)}–${formatAmount(bizHigh, "VND")}`) : "—"}
-                  </td>
-                  <td className="text-right text-[#67a9f5]">{oth > 0 ? formatAmount(oth, "VND") : "—"}</td>
-                </tr>
-              );
-            })}
+            {visibleRows.map((r, i) => (
+              <tr key={i} className="border-b border-[#13212e] last:border-b-0 [&>td]:px-2 [&>td]:py-1.5 [&>td]:align-top [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[10px]">
+                <td className="whitespace-nowrap text-[#8aa0b5]">{formatDate(r.date)}</td>
+                <td className="whitespace-nowrap text-[#cfd9e3]">{r.pair}</td>
+                <td className="whitespace-nowrap">
+                  <span className={r.side === "SELL" ? "text-[#ff8972]" : "text-[#67a9f5]"}>{r.side}</span>
+                  {r.unmatched ? <span className="ml-1 text-[#ff8972]" title="no matching buy in CSV">⚠</span> : null}
+                </td>
+                <td className="text-right text-[#cfd9e3]">{formatAmount(r.gross, "VND")}</td>
+                <td className="text-right text-[#8aa0b5]">{r.side === "SELL" ? formatAmount(r.matchedCost, "VND") : "—"}</td>
+                <td className={`text-right ${r.netProfit > 0 ? "text-[#6bcfa6]" : r.netProfit < 0 ? "text-[#ff8972]" : "text-[#6c8094]"}`}>
+                  {r.side === "SELL" ? formatAmount(r.netProfit, "VND") : "—"}
+                </td>
+                <td className="whitespace-nowrap"><span className={bucketColor(r.bucket)}>{bucketLabel(r.bucket)}</span></td>
+                <td className="whitespace-nowrap text-[#6c8094]">{r.clause.id}</td>
+                <td className="text-right">
+                  {r.taxOwed > 0 ? <span className="text-[#76e1b0]">{formatAmount(r.taxOwed, "VND")}</span> : <span className="text-[#6c8094]">—</span>}
+                </td>
+              </tr>
+            ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-[#1b2d3e] bg-[#0d1924] [&>td]:px-3 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
-              <td className="text-[#8aa0b5]">Total</td>
-              <td className="text-right text-[#76e1b0]">{formatAmount(grandTransfer, "VND")}</td>
-              <td className="text-right text-[#f0c97a]">
-                {grandBizLow === 0 && grandBizHigh === 0 ? "0.00" : `${formatAmount(grandBizLow)}–${formatAmount(grandBizHigh, "VND")}`}
-              </td>
-              <td className="text-right text-[#67a9f5]">{formatAmount(grandOther, "VND")}</td>
+            <tr className="border-t-2 border-[#1b2d3e] bg-[#0d1924] [&>td]:px-2 [&>td]:py-2 [&>td]:font-[family-name:var(--font-mono)] [&>td]:text-[11px]">
+              <td colSpan={8} className="text-right text-[#8aa0b5]">Total PIT to declare</td>
+              <td className="text-right text-[#76e1b0]">{formatAmount(decl.totals.totalTax, "VND")}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <p className="mt-2 text-[10px] leading-relaxed text-[#6c8094]">
-        <strong className="text-[#f0c97a]">These numbers use only the cost basis in your CSV.</strong> If you have
-        buys outside this export (spot trades, deposits, other exchanges), the Business and Other-income columns
-        overstate your profit. Add your full acquisition history for accurate net-profit figures. Transfer 0.1%
-        is gross — unaffected by cost basis. Which bucket applies to you is a legal characterization; the tool
-        computes all three, it does not pick.
+
+      {hiddenCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="terminal-icon-button mt-2 text-[#aab9c8]"
+        >
+          <ChevronDown size={13} /> Show {hiddenCount} more trade{hiddenCount > 1 ? "s" : ""}
+        </button>
+      ) : showAll && decl.rows.length > 12 ? (
+        <button
+          type="button"
+          onClick={() => setShowAll(false)}
+          className="terminal-icon-button mt-2 text-[#aab9c8]"
+        >
+          <ChevronUp size={13} /> Collapse
+        </button>
+      ) : null}
+
+      {decl.totals.unmatchedCount > 0 ? (
+        <p className="mt-3 text-[10px] leading-relaxed text-[#ff8972]">
+          <AlertTriangle size={11} className="mr-1 inline" />
+          {decl.totals.unmatchedCount} sell(s) have no matching buy in this CSV (⚠). Their cost basis is unknown —
+          tax shown treats them as zero-cost, which <strong>overstates net profit</strong>. Add your full
+          Binance spot + convert + deposit history for accurate figures.
+        </p>
+      ) : null}
+
+      {decl.businessNotes.length > 0 ? (
+        <div className="mt-3 border border-[#3a2c12] bg-[#15110a] px-3 py-2 text-[11px] text-[#f0c97a]">
+          <p className="mb-1 flex items-center gap-1 font-semibold">
+            <AlertTriangle size={11} /> Alternative characterization — business income (thu nhập từ kinh doanh)
+          </p>
+          <p className="mb-2 text-[#c2a05a]">
+            If your trading is characterized as a business, years above 500M VND revenue face 15-20% on net profit
+            instead of the per-trade buckets above. Annual, not per-trade.
+          </p>
+          <table className="w-full text-left font-[family-name:var(--font-mono)] text-[10px]">
+            <thead className="text-[#c2a05a]">
+              <tr>
+                <th className="py-1">Year</th>
+                <th className="text-right">Revenue</th>
+                <th className="text-right">Net profit</th>
+                <th className="text-right">PIT 15-20%</th>
+              </tr>
+            </thead>
+            <tbody className="text-[#f0c97a]">
+              {decl.businessNotes.map((n) => (
+                <tr key={n.year} className="border-t border-[#2a1f0d]">
+                  <td className="py-1">{n.year}</td>
+                  <td className="text-right">{formatAmount(n.revenue, "VND")}</td>
+                  <td className="text-right">{formatAmount(n.netProfit, "VND")}</td>
+                  <td className="text-right">{formatAmount(n.pitLow)}–{formatAmount(n.pitHigh, "VND")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[10px] text-[#c2a05a]">
+            <strong>CSV-only cost basis.</strong> Same unmatched-sell caveat applies — overstated if you have
+            buys outside this export.
+          </p>
+        </div>
+      ) : null}
+
+      <p className="mt-3 text-[10px] leading-relaxed text-[#6c8094]">
+        <strong className="text-[#f0c97a]">Estimate, not filing advice.</strong> Bucket assignment: post-27-Mar-2026
+        sells → transfer 0.1% (Circular 32 Art. 5, if it reaches your platform); pre-effective sells → other income
+        10% (general PIT fallback). Which applies depends on your legal characterization — confirm with a VN tax advisor.
       </p>
     </div>
   );
 }
+
+function bucketLabel(bucket: string): string {
+  switch (bucket) {
+    case "transfer": return "Transfer 0.1%";
+    case "other-income": return "Other 10%";
+    case "buy": return "Buy";
+    default: return bucket;
+  }
+}
+
