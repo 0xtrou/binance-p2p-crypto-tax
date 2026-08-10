@@ -194,7 +194,7 @@ function Results({
           {
             label: "Declaration",
             content: (
-              <>
+              <div className="space-y-4">
                 <Explanation result={result} />
                 <PitDeclarationTable result={result} />
                 <ExportButtons
@@ -202,13 +202,13 @@ function Results({
                   onXlsx={() => exportDeclarationXlsx(decl)}
                   prefix="pit-declaration"
                 />
-              </>
+              </div>
             ),
           },
           {
             label: "Breakdown",
             content: (
-              <>
+              <div className="space-y-4">
                 <ComplianceTable result={result} />
                 {parsed.skipped.length > 0 ? (
                   <Collapsible
@@ -235,7 +235,7 @@ function Results({
                   onXlsx={() => exportComplianceXlsx(parsed)}
                   prefix="compliance-breakdown"
                 />
-              </>
+              </div>
             ),
           },
         ]}
