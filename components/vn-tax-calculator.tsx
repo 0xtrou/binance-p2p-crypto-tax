@@ -47,8 +47,6 @@ export function VnTaxCalculator() {
     setShowSkipped(false);
   };
 
-  const firstQuote = result ? Object.keys(result.tax.totalsByQuote).sort()[0] ?? "" : "";
-
   return (
     <main className="min-h-screen bg-[#071018] text-[#cfd9e3] terminal-shell">
       <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
@@ -124,7 +122,6 @@ export function VnTaxCalculator() {
         {result ? (
           <Results
             result={result}
-            firstQuote={firstQuote}
             showSkipped={showSkipped}
             setShowSkipped={setShowSkipped}
           />
@@ -157,14 +154,12 @@ function Disclaimer() {
 
 interface ResultsProps {
   result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
-  firstQuote: string;
   showSkipped: boolean;
   setShowSkipped: (v: boolean) => void;
 }
 
 function Results({
   result,
-  firstQuote,
   showSkipped,
   setShowSkipped,
 }: ResultsProps) {
@@ -200,7 +195,7 @@ function Results({
             label: "Declaration",
             content: (
               <>
-                <Explanation result={result} firstQuote={firstQuote} />
+                <Explanation result={result} />
                 <PitDeclarationTable result={result} />
                 <ExportButtons
                   onCsv={() => exportDeclarationCsv(decl)}
@@ -435,21 +430,17 @@ function Collapsible({
 
 interface ExplanationProps {
   result: { parsed: ReturnType<typeof parseBinanceCsv>; tax: ReturnType<typeof computeTax> };
-  firstQuote: string;
 }
 
-function Explanation({ result, firstQuote }: ExplanationProps) {
-  const { tax } = result;
-  const firstTaxable = tax.taxable[0];
+function Explanation({ result }: ExplanationProps) {
+  const { parsed } = result;
+  const decl = useMemo(() => buildDeclaration(parsed.trades), [parsed]);
   const [open, setOpen] = useState(false);
 
-  // Worked example uses the first taxable sell if present, else a placeholder
-  // so the math is always legible. Falls back to 1.00 when nothing is taxable.
-  const exGross = firstTaxable?.grossValue ?? 1;
-  const exTax = firstTaxable?.tax ?? 0.001;
-  const exPair = firstTaxable?.pair ?? "—";
-  const exQuote = firstTaxable?.quote ?? firstQuote ?? "—";
-  const exDate = firstTaxable ? formatDate(firstTaxable.date) : "—";
+  // Worked examples — pick first transfer-bucket sell + first other-income sell
+  // so both bucket formulas are legible. Fall back to placeholders if absent.
+  const firstTransfer = decl.rows.find((r) => r.bucket === "transfer");
+  const firstOther = decl.rows.find((r) => r.bucket === "other-income");
 
   return (
     <div>
@@ -465,49 +456,98 @@ function Explanation({ result, firstQuote }: ExplanationProps) {
       {open ? (
         <div className="mt-2 space-y-4 border border-[#1b2d3e] bg-[#0a1622] px-4 py-4 text-xs leading-relaxed text-[#a9b8c7]">
           <section>
-            <h3 className="terminal-label mb-2">Worked example</h3>
+            <h3 className="terminal-label mb-2">Two buckets, two formulas</h3>
             <p className="mb-2 text-[#8aa0b5]">
-              Using {exPair} sell on {exDate}:
+              Each SELL is assigned one bucket based on its date. Buys are not taxed (acquisitions).
             </p>
-            <ol className="space-y-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
-              <li>1. transfer price (gross) = {formatAmount(exGross, exQuote)}</li>
-              <li>2. PIT rate = 0.1% (0.001)</li>
-              <li>3. tax = {formatAmount(exGross, exQuote)} × 0.001 = {formatAmount(exTax, exQuote)}</li>
-            </ol>
+            <div className="space-y-3">
+              <div className="border-l-2 border-[#76e1b0] pl-3">
+                <p className="font-semibold text-[#76e1b0]">Transfer 0.1% — sells on/after 27 Mar 2026</p>
+                <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
+                  tax = gross transfer price × 0.001
+                </p>
+                {firstTransfer ? (
+                  <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
+                    e.g. {formatDate(firstTransfer.date)} {firstTransfer.pair}:{" "}
+                    {formatAmount(firstTransfer.gross, "VND")} × 0.001 ={" "}
+                    {formatAmount(firstTransfer.taxOwed, "VND")}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-[10px] text-[#6c8094]">
+                  Base = gross, not profit. Whether Circular 32 reaches Binance/Remitano (foreign, unlicensed)
+                  is unsettled — see caveats below.
+                </p>
+              </div>
+              <div className="border-l-2 border-[#f0c97a] pl-3">
+                <p className="font-semibold text-[#f0c97a]">Other income 10% — sells before 27 Mar 2026</p>
+                <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
+                  tax = max(0, gross − FIFO cost) × 0.1
+                </p>
+                {firstOther ? (
+                  <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
+                    e.g. {formatDate(firstOther.date)} {firstOther.pair}: ({formatAmount(firstOther.gross)} −{" "}
+                    {formatAmount(firstOther.matchedCost)}) × 0.1 = {formatAmount(firstOther.taxOwed, "VND")}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-[10px] text-[#6c8094]">
+                  Net-profit base. Requires matching buys; unmatched sells treat cost as 0 (overstates profit).
+                </p>
+              </div>
+            </div>
           </section>
 
-          <section>
-            <h3 className="terminal-label mb-2">Step → clause mapping</h3>
+          <section className="border-t border-[#13212e] pt-3">
+            <h3 className="terminal-label mb-2">Clause mapping</h3>
             <ul className="space-y-3">
-              <ClauseRow step="0.1% PIT rate" clause={CLAUSES.rate} />
-              <ClauseRow step="tax base = gross transfer price (not gains)" clause={CLAUSES.base} />
-              <ClauseRow step="only sells on/after 27 Mar 2026 counted" clause={CLAUSES.effectiveDate} />
-              <ClauseRow step="VAT does not apply" clause={CLAUSES.vat} />
-              <ClauseRow step="interim securities-analog rule (pilot)" clause={CLAUSES.pilot} />
+              <ClauseRow step="0.1% transfer rate (post 27 Mar 2026)" clause={CLAUSES.rate} />
+              <ClauseRow step="transfer price = gross value (interpretation)" clause={CLAUSES.base} />
+              <ClauseRow step="10% other income (pre-effective fallback)" clause={CLAUSES.otherIncome} />
+              <ClauseRow step="Circular 32 effective 27 Mar 2026, not retroactive" clause={CLAUSES.effectiveDate} />
+              <ClauseRow step="VAT exempt" clause={CLAUSES.vat} />
+              <ClauseRow step="interim securities-analog pilot" clause={CLAUSES.pilot} />
+              <ClauseRow step="business income 15-20% (alternative, >500M VND/yr)" clause={CLAUSES.bizRate} />
+              <ClauseRow step="unresolved: which bucket for sole-revenue traders?" clause={CLAUSES.bizCharacterization} />
             </ul>
           </section>
 
           <section className="border-t border-[#13212e] pt-3">
-            <h3 className="terminal-label mb-2">Assumptions this tool makes</h3>
+            <h3 className="terminal-label mb-2">Honest caveats — read before relying on any number</h3>
             <ul className="list-disc space-y-1 pl-4 text-[#8aa0b5]">
               <li>
-                <strong className="text-[#cfd9e3]">Buys are not taxed.</strong> &quot;Transfer&quot; is read
-                as a disposal/sale; buys are acquisitions. Only SELL rows bear 0.1%.
+                <strong className="text-[#f0c97a]">Licensed-provider gap.</strong> Art. 5 taxes transfers
+                &quot;through a crypto asset service provider.&quot; Binance and Remitano are foreign platforms,
+                not licensed VN providers under the pilot. Whether the 0.1% legally applies to trades on them
+                is <strong className="text-[#cfd9e3]">unsettled</strong>. The tool computes it anyway because
+                it&apos;s the only quantified rate in VN law — but the number may not be legally owed.
               </li>
               <li>
-                <strong className="text-[#cfd9e3]">Licensed-provider caveat.</strong> Art. 5 applies to
-                transfers <em>through a licensed crypto asset service provider</em>. Binance may not yet
-                qualify under the pilot; P2P is person-to-person. Liability may differ — verify with a
-                VN tax advisor.
+                <strong className="text-[#f0c97a]">Transfer price undefined.</strong> Circular 32 says
+                &quot;transfer price&quot; without defining it. The tool reads it as gross quote value
+                (securities analogy). A net-profit reading would change the number.
               </li>
               <li>
-                <strong className="text-[#cfd9e3]">Pre-27 Mar 2026 sells = grey zone.</strong> Circular 32
-                is not retroactive; pre-pilot law was ambiguous. These land in the grey-zone bucket at
-                $0 tax.
+                <strong className="text-[#f0c97a]">Other-income base unsettled.</strong> General PIT applies
+                10% to &quot;other income&quot; but the base (gross vs net vs presumptive) depends on how the
+                tax authority characterizes the activity. Tool uses FIFO net profit as a middle reading.
               </li>
               <li>
-                <strong className="text-[#cfd9e3]">FX to VND is your job.</strong> Non-VND quotes show tax
-                in the quote currency. Totals across mixed currencies are informational only.
+                <strong className="text-[#f0c97a]">Business 15-20% is a range.</strong> PIT Law 2025 may apply
+                a progressive schedule instead of a flat band, depending on registration status. Tool shows
+                the band as a working estimate.
+              </li>
+              <li>
+                <strong className="text-[#f0c97a]">Cost basis depends on your full history.</strong> If your
+                CSV lacks buys for some sells, the tool treats those sells as zero-cost — overstating profit
+                and tax. Add your full acquisition ledger (spot, convert, deposits) for accuracy.
+              </li>
+              <li>
+                <strong className="text-[#f0c97a]">No buy-side tax.</strong> &quot;Transfer&quot; is read as
+                disposal/sale. Buys are acquisitions, not taxed. This reading is defensible but not explicit
+                in Circular 32.
+              </li>
+              <li>
+                <strong className="text-[#f0c97a]">Not legal advice.</strong> Confirm characterization + final
+                numbers with a licensed VN tax advisor before filing.
               </li>
             </ul>
           </section>
@@ -515,10 +555,9 @@ function Explanation({ result, firstQuote }: ExplanationProps) {
           <section className="border-t border-[#13212e] pt-3">
             <h3 className="terminal-label mb-2">Out of scope</h3>
             <p className="text-[#8aa0b5]">
-              This tool computes <strong className="text-[#cfd9e3]">individual PIT only</strong>. Domestic
-              corporates face 20% CIT on net gains (proceeds − cost − expenses) under Art. 4.1. Foreign
-              corporates face 0.1% CIT on gross transfer value. Wallet-to-wallet transfers, staking,
-              airdrops, and futures are not handled — Circular 32 is silent on them.
+              Individual PIT only. Domestic corporates: 20% CIT on net gains (Art. 4.1). Foreign corporates:
+              0.1% CIT on gross. Not handled: wallet-to-wallet transfers, staking, airdrops, futures, crypto-to-crypto
+              swaps — Circular 32 is silent on these.
             </p>
           </section>
         </div>

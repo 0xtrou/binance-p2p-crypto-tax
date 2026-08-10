@@ -26,7 +26,7 @@ export const CLAUSES = {
     id: "Art. 5",
     instrument: "Circular 32/2026/TT-BTC (Bộ Tài chính)",
     effective: "27 March 2026",
-    text: 'Tax base is the "transfer price" of each sale — the gross quote-currency value received, not the net gain. By analogy to Vietnam securities transfer tax (0.1% of gross transaction value).',
+    text: 'Circular 32 levies 0.1% on the "transfer price" (giá chuyển nhượng) but does NOT define the term precisely. Tool reads it as gross quote-currency value received, by analogy to Vietnam securities transfer tax (0.1% of gross transaction value). This reading is defensible but not explicit in the Circular — confirm with a VN tax advisor.',
   },
   effectiveDate: {
     id: "Art. 7.1",
@@ -74,7 +74,7 @@ export const CLAUSES = {
     id: "PIT Law 2025",
     instrument: "Law on Personal Income Tax 2025 (eff. 1 July 2026)",
     effective: "1 July 2026",
-    text: "Above the VND 500M revenue threshold, net profit is taxed at 15%–20% (expense deduction permitted enterprise-style). The 5/10/20/30/35% progressive schedule applies to SALARY income, not business income.",
+    text: "Above VND 500M annual revenue, business income is taxed on net profit. The exact rate is unsettled: PwC cites 15-20%, but the PIT Law 2025 also implements a 5-bracket progressive schedule (5/10/20/30/35%) which may apply to registered household businesses. Tool shows 15-20% band as a working estimate — the true rate depends on registration status and implementing decrees. Confirm with a VN tax advisor.",
   },
   bizCharacterization: {
     id: "—",
@@ -86,7 +86,7 @@ export const CLAUSES = {
     id: "PIT Law (thu nhập khác)",
     instrument: "Law on Personal Income Tax — Other Income",
     effective: "General PIT framework",
-    text: 'Income not specifically categorized falls under "other income" (thu nhập khác) at a flat 10% on net profit. The fallback for crypto cashouts Circular 32 does not reach: foreign exchanges (Binance), pre-pilot sells, or any case where no licensed provider withholds the 0.1%. No 500M exemption applies.',
+    text: 'Income not specifically categorized falls under "other income" (thu nhập khác) at 10%. The base is typically assessable income (revenue minus deductible expenses), but for ad-hoc income the General Department of Taxation often applies 10% on gross or on a presumptive basis. Tool applies 10% to FIFO net profit as a defensible middle reading; actual base may differ. Fallback for crypto cashouts Circular 32 does not reach (Binance, foreign platforms, pre-pilot). No 500M exemption.',
   },
 } as const;
 
