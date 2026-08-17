@@ -7,7 +7,7 @@ import { exportComplianceCsv, exportComplianceXlsx, exportDeclarationCsv, export
 import { computeTax } from "@/lib/vn-tax/compute-tax";
 import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
-import { classifyTrade, CLAUSES } from "@/lib/vn-tax/regulation";
+import { classifyTrade, CLAUSES, OFFICIAL_SOURCES } from "@/lib/vn-tax/regulation";
 import { S } from "@/lib/vn-tax/strings";
 
 const STORAGE_KEY = "vn-tax-crypto-sources";
@@ -170,6 +170,8 @@ export function VnTaxCalculator() {
 
         <Disclaimer />
 
+        <LegalNotice />
+
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <SourcePanel
             title={S.remitanoCsv}
@@ -325,6 +327,32 @@ function Disclaimer() {
   );
 }
 
+function LegalNotice() {
+  return (
+    <aside className="mt-3 border border-[#5b3f16] bg-[#181108] px-4 py-4 text-xs leading-relaxed text-[#ddc083]">
+      <p className="mb-2 flex items-center gap-2 font-semibold text-[#f0c97a]">
+        <BookOpen size={14} /> Notice pháp lý — tổng hợp từ ChatGPT và nguồn chính phủ
+      </p>
+      <ul className="list-disc space-y-1 pl-4 text-[#c9b17a]">
+        <li><strong className="text-[#f0c97a]">Không nên “cứ đợi”</strong> cho lệnh bán từ 27/03/2026: Thông tư 32 đã có hiệu lực; công cụ chỉ hiển thị ước tính 0,1%, không xác nhận nghĩa vụ cuối cùng.</li>
+        <li><strong className="text-[#f0c97a]">2019–26/03/2026:</strong> không tự kê khai theo mức 0,1% hoặc 10% từ công cụ. Giữ chứng từ và xin ý kiến bằng văn bản trước khi nộp hay điều chỉnh.</li>
+        <li><strong className="text-[#f0c97a]">Không hồi tố tự động:</strong> không thấy căn cứ trong các nguồn dưới đây để áp ngược Thông tư 32 cho giao dịch trước 27/03/2026.</li>
+      </ul>
+      <p className="mt-3 text-[10px] uppercase tracking-wide text-[#8f7d57]">Nguồn chính phủ</p>
+      <ul className="mt-1 space-y-1 text-[11px]">
+        {OFFICIAL_SOURCES.map((source) => (
+          <li key={source.url}>
+            <a className="text-[#7ec5ff] underline underline-offset-2 hover:text-[#b9e0ff]" href={source.url} target="_blank" rel="noreferrer">
+              {source.title}
+            </a>
+            <span className="text-[#a68e5d]"> — {source.note}</span>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
 interface ResultsProps {
   result: {
     parsed: ReturnType<typeof parseBinanceCsv>;
@@ -362,7 +390,7 @@ function Results({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card label={S.totalPit} value={formatAmount(decl.totals.totalTax, "VND")} accent />
         <Card label={S.transfer01} value={formatAmount(decl.totals.transferTax, "VND")} />
-        <Card label={S.otherIncome10} value={formatAmount(decl.totals.otherIncomeTax, "VND")} />
+        <Card label={S.historicReview} value={formatAmount(decl.totals.historicReviewSoldVnd, "VND")} />
         <Card label="Lợi nhuận ròng" value={formatAmount(decl.totals.totalNetVnd, "VND")} />
         <Card label={S.totalBuyVnd} value={formatAmount(decl.totals.totalBoughtVnd, "VND")} />
         <Card label={S.totalSellVnd} value={formatAmount(decl.totals.totalSoldVnd, "VND")} />
@@ -579,7 +607,7 @@ function bucketColor(bucket: string): string {
     case "transfer":
       return "text-[#76e1b0] font-semibold";
     case "grey-zone":
-    case "other-income":
+    case "historic-review":
       return "text-[#f0c97a]";
     case "buy":
       return "text-[#67a9f5]";
@@ -659,21 +687,14 @@ function Explanation({ result }: ExplanationProps) {
                     {formatAmount(firstTransfer.taxOwed, "VND")}
                   </p>
                 ) : null}
-                <p className="mt-1 text-[10px] text-[#6c8094]">
-                  Đây là <strong className="text-[#76e1b0]">thuế chốt</strong> (final) — không kê khai thêm thuế thu nhập khác trên phần này.
-                  Áp dụng theo Điều 5 Thông tư 32/2026/TT-BTC.
-                </p>
+                <p className="mt-1 text-[10px] text-[#6c8094]">Ước tính làm việc theo Thông tư 32/2026/TT-BTC. Xác nhận điều kiện áp dụng và cách kê khai trước khi nộp.</p>
               </div>
               <div className="border-l-2 border-[#f0c97a] pl-3">
-                <p className="font-semibold text-[#f0c97a]">{S.otherBucketTitle}</p>
+                <p className="font-semibold text-[#f0c97a]">{S.historicReviewTitle}</p>
                 <p className="mt-1 font-[family-name:var(--font-mono)] text-[11px] text-[#cfd9e3]">
-                  {S.otherFormula}
+                  {S.historicReviewFormula}
                 </p>
-                <p className="mt-1 text-[10px] text-[#6c8094]">
-                  Tính theo <strong className="text-[#f0c97a]">năm</strong>: (tổng bán − tổng mua trước 27/03/2026) × 10%.
-                  Chỉ áp dụng nếu lợi nhuận ròng &gt; 0 <strong className="text-[#cfd9e3]">và</strong> doanh thu năm &gt; 500 triệu VND.
-                  Năm ≤ 500 triệu → miễn (characterize hộ kinh doanh, Luật Thuế TNCN 2025).
-                </p>
+                <p className="mt-1 text-[10px] text-[#6c8094]">{S.historicReviewNote}</p>
               </div>
             </div>
           </section>
@@ -682,18 +703,15 @@ function Explanation({ result }: ExplanationProps) {
             <h3 className="terminal-label mb-2">Vì sao tách 2 khoảng thời gian?</h3>
             <ul className="list-disc space-y-1 pl-4 text-[#8aa0b5]">
               <li>
-                <strong className="text-[#cfd9e3]">Trước 27/03/2026:</strong> chưa có Thông tư 32.
-                Giao dịch P2P rơi vào &quot;thu nhập khác&quot; — 10% trên lợi nhuận ròng năm.
-                Có threshold miễn 500 triệu/năm nếu characterize là hộ kinh doanh.
+                <strong className="text-[#cfd9e3]">2019–26/03/2026:</strong> công cụ không tự tính thuế.
+                Không thấy căn cứ trong nguồn chính phủ đã rà soát để tự áp mức 0,1% hoặc 10%; giữ chứng từ và xin ý kiến bằng văn bản trước khi kê khai/điều chỉnh.
               </li>
               <li>
                 <strong className="text-[#cfd9e3]">Từ 27/03/2026:</strong> Thông tư 32 hiệu lực.
-                Thuế chuyển nhượng 0,1% trên tổng giá trị bán — thuế chốt, không cần tính lợi nhuận.
-                Không kê khai thuế thu nhập khác thêm (tránh double-count).
+                Công cụ ước tính 0,1% trên giá chuyển nhượng từng lần; phạm vi áp dụng thực tế và cách kê khai cần đối chiếu hồ sơ.
               </li>
               <li>
-                <strong className="text-[#f0c97a]">Không tính kép:</strong> mỗi giao dịch chỉ chịu 1 loại thuế.
-                Giao dịch sau 27/03/2026 = 0,1%. Giao dịch trước = 10% (nếu trên threshold).
+                <strong className="text-[#f0c97a]">Không hồi tố tự động:</strong> không thấy căn cứ trong các nguồn này để áp ngược Thông tư 32 cho giao dịch trước 27/03/2026.
               </li>
             </ul>
           </section>
@@ -702,13 +720,11 @@ function Explanation({ result }: ExplanationProps) {
             <h3 className="terminal-label mb-2">{S.clauseMapping}</h3>
             <ul className="space-y-3">
               <ClauseRow step="Thuế suất chuyển nhượng 0,1% (từ 27/03/2026)" clause={CLAUSES.rate} />
-              <ClauseRow step="Giá chuyển nhượng = tổng giá trị (cách hiểu)" clause={CLAUSES.base} />
-              <ClauseRow step="Thu nhập khác 10% (phương án dự phòng trước ngày hiệu lực)" clause={CLAUSES.otherIncome} />
-              <ClauseRow step="Thông tư 32 hiệu lực 27/03/2026, không hồi tố" clause={CLAUSES.effectiveDate} />
-              <ClauseRow step="Không chịu thuế GTGT" clause={CLAUSES.vat} />
-              <ClauseRow step="Quy định tạm thời tương tự chứng khoán (thí điểm)" clause={CLAUSES.pilot} />
-              <ClauseRow step="Thu nhập kinh doanh 15-20% (phân loại thay thế, >500 triệu/năm)" clause={CLAUSES.bizRate} />
-              <ClauseRow step="Chưa rõ: nhóm nào cho người giao dịch toàn thời gian?" clause={CLAUSES.bizCharacterization} />
+              <ClauseRow step="Thông tư 32 hiệu lực 27/03/2026" clause={CLAUSES.effectiveDate} />
+              <ClauseRow step="Luật Thuế TNCN 2025 hiệu lực 01/07/2026" clause={CLAUSES.pitLaw} />
+              <ClauseRow step="Giai đoạn trước 27/03/2026: giữ hồ sơ, không tự gán thuế" clause={CLAUSES.historicUncertainty} />
+              <ClauseRow step="Nguyên tắc không tự giả định hồi tố" clause={CLAUSES.retroactivity} />
+              <ClauseRow step="Hướng xử lý an toàn theo từng hồ sơ" clause={CLAUSES.filingRisk} />
             </ul>
           </section>
 
@@ -717,8 +733,6 @@ function Explanation({ result }: ExplanationProps) {
             <ul className="list-disc space-y-1 pl-4 text-[#8aa0b5]">
               <li>{S.caveatLicensed}</li>
               <li>{S.caveatPrice}</li>
-              <li>{S.caveatOtherBase}</li>
-              <li>{S.caveatBizRange}</li>
               <li>{S.caveatCost}</li>
               <li>{S.caveatNoBuyTax}</li>
               <li>{S.caveatNotAdvice}</li>
@@ -742,7 +756,7 @@ function ClauseRow({
   clause,
 }: {
   step: string;
-  clause: { id: string; instrument: string; effective: string; text: string };
+  clause: { id: string; instrument: string; effective: string; text: string; sourceUrl?: string };
 }) {
   return (
     <li className="border-l-2 border-[#376253] pl-3">
@@ -750,6 +764,7 @@ function ClauseRow({
       <p className="mt-1 italic text-[#8aa0b5]">&quot;{clause.text}&quot;</p>
       <p className="mt-1 font-[family-name:var(--font-mono)] text-[10px] text-[#6c8094]">
         {clause.id} · {clause.instrument} · {clause.effective}
+        {clause.sourceUrl ? <> · <a className="text-[#7ec5ff] underline underline-offset-2" href={clause.sourceUrl} target="_blank" rel="noreferrer">nguồn chính phủ</a></> : null}
       </p>
     </li>
   );
@@ -832,7 +847,7 @@ function PitDeclarationTable({
                 <td className="whitespace-nowrap"><span className={bucketColor(r.bucket)}>{bucketLabel(r.bucket)}</span></td>
                 <td className="whitespace-nowrap text-[#6c8094]">{r.clause.id}</td>
                 <td className="text-right">
-                  {r.taxOwed > 0 ? <span className="text-[#76e1b0]">{formatAmount(r.taxOwed, "VND")}</span> : <span className="text-[#6c8094]">{r.side === "SELL" ? "× năm" : "—"}</span>}
+                  {r.taxOwed > 0 ? <span className="text-[#76e1b0]">{formatAmount(r.taxOwed, "VND")}</span> : <span className="text-[#6c8094]">{r.bucket === "historic-review" ? "cần xác nhận" : "—"}</span>}
                 </td>
               </tr>
             ))}
@@ -874,9 +889,8 @@ function PitDeclarationTable({
                 <th className="text-right">Tổng mua</th>
                 <th className="text-right">Tổng bán</th>
                 <th className="text-right">Lợi nhuận ròng</th>
-                <th className="text-right">Miễn thuế</th>
                 <th className="text-right">Thuế chuyển nhượng 0,1%</th>
-                <th className="text-right">Thu nhập khác 10%</th>
+                <th className="text-right">Bán trước 27/03/2026</th>
                 <th className="text-right">Tổng thuế</th>
               </tr>
             </thead>
@@ -887,22 +901,16 @@ function PitDeclarationTable({
                   <td className="text-right text-[#67a9f5]">{formatAmount(y.boughtVnd, "VND")}</td>
                   <td className="text-right text-[#ff8972]">{formatAmount(y.soldVnd, "VND")}</td>
                   <td className={`text-right ${y.netVnd > 0 ? "text-[#76e1b0]" : "text-[#6c8094]"}`}>{formatAmount(y.netVnd, "VND")}</td>
-                  <td className="text-right">
-                    {y.underThreshold
-                      ? <span className="text-[#76e1b0]" title="Doanh thu ≤ 500 triệu VND → miễn thuế TNCN nếu characterize là hộ kinh doanh">✓ ≤500tr</span>
-                      : <span className="text-[#ff8972]" title="Doanh thu > 500 triệu VND → chịu thuế">&gt;500tr</span>}
-                  </td>
                   <td className="text-right text-[#76e1b0]">{formatAmount(y.transferTax, "VND")}</td>
-                  <td className="text-right text-[#f0c97a]">{formatAmount(y.otherIncomeTax, "VND")}</td>
+                  <td className="text-right text-[#f0c97a]">{formatAmount(y.historicReviewSoldVnd, "VND")}</td>
                   <td className="text-right font-semibold text-[#76e1b0]">{formatAmount(y.totalTax, "VND")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="mt-3 space-y-1 text-[10px] leading-relaxed text-[#6c8094]">
-            <p><strong className="text-[#8aa0b5]">Thuế chuyển nhượng 0,1%</strong> — áp dụng trên tổng giá trị bán từ 27/03/2026. Đây là thuế <strong className="text-[#76e1b0]">chốt</strong> (final) theo Điều 5 Thông tư 32/2026/TT-BTC — không kê khai thêm thuế thu nhập khác trên phần này.</p>
-            <p><strong className="text-[#8aa0b5]">Thuế thu nhập khác 10%</strong> — áp dụng trên lợi nhuận ròng (bán - mua) của phần <strong className="text-[#cfd9e3]">trước</strong> 27/03/2026, nếu lợi nhuận dương. Chỉ tính cho năm có doanh thu &gt; 500 triệu VND — năm ≤ 500 triệu được miễn (characterize hộ kinh doanh theo Luật Thuế TNCN 2025).</p>
-            <p><strong className="text-[#8aa0b5]">Không tính kép</strong> — mỗi giao dịch chỉ chịu một loại thuế: hoặc 0,1% chuyển nhượng (từ 27/03/2026), hoặc 10% thu nhập khác (trước 27/03/2026). Không tính cả hai trên cùng giao dịch.</p>
+            <p><strong className="text-[#8aa0b5]">Thuế chuyển nhượng 0,1%</strong> — công cụ ước tính trên tổng giá trị bán từ 27/03/2026 theo Thông tư 32/2026/TT-BTC.</p>
+            <p><strong className="text-[#8aa0b5]">Bán trước 27/03/2026</strong> — chỉ hiển thị giá trị giao dịch cần rà soát; không phải thuế phải nộp và không tự áp mức 0,1% hoặc 10%.</p>
           </div>
         </div>
       ) : null}
@@ -954,10 +962,10 @@ function AssetFlowTable({ decl }: { decl: ReturnType<typeof buildDeclaration> })
 function bucketLabel(bucket: string): string {
   switch (bucket) {
     case "transfer": return S.bucketTransfer;
-    case "other-income": return S.bucketOther;
+    case "historic-review": return S.bucketHistoricReview;
     case "buy": return S.buy;
     case "taxable": return S.bucketTransfer;
-    case "grey-zone": return S.bucketOther;
+    case "grey-zone": return S.bucketHistoricReview;
     default: return bucket;
   }
 }

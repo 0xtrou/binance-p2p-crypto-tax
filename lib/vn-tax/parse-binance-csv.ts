@@ -254,7 +254,7 @@ function parseRow(
  *  - All exported rows are completed (no Status column).
  *
  *  Remitano is a foreign P2P platform — same licensed-provider gap as Binance.
- *  Same tax treatment: other-income 10% fallback (pre-effective) or transfer
+ *  Pre-effective sales are review-only; sales from 27/03/2026 use transfer
  *  0.1% (post-effective, if Circular 32 reaches the platform).
  */
 function parseRemitanoRow(raw: Record<string, string>): { trade: ParsedTrade } | { reason: string } {

@@ -1,23 +1,19 @@
 # VN Crypto Tax Estimator
 
-Estimate Vietnam personal income tax (PIT) on Binance trades under **Circular 32/2026/TT-BTC**.
+Browser-only working-record tool for Vietnam crypto transactions from Binance and Remitano CSV exports.
 
-Paste a Binance Order History or Trade History CSV. The tool computes the **0.1% PIT** on each **sell** dated on/after **27 March 2026** (the Circular's effective date), groups totals by quote currency, and buckets pre-effective-date sells in a grey-zone list at $0 tax.
+## Scope and legal notice
 
-## What this computes
+- **From 27 March 2026:** estimates **0.1% personal income tax** on each sell using Circular `32/2026/TT-BTC` as announced by the Ministry of Finance.
+- **2019 through 26 March 2026:** marks sells for review and assigns **no automatic tax**. The tool does not treat an assumed 0.1% or 10% rate as a filing rule for this period.
+- **No automatic retroactivity:** this is a ChatGPT-assisted synthesis of public sources, not legal advice or official tax guidance. Keep source records and get written advice from the tax authority or a licensed Vietnam tax adviser before filing or amending historic periods.
+- **Exports:** CSV exports prepend this notice and official-source links; XLSX exports include a `Lưu ý pháp lý` sheet.
 
-Per **Article 5** of Circular 32/2026/TT-BTC (official English translation read in full):
+Official sources:
 
-> Individual investors (regardless of whether they are residents or non-residents) who transfer crypto assets through a crypto asset service provider are subject to personal income tax at a rate of **0.1% on the transfer price for each transaction**.
-
-- **Rate:** 0.1% of gross sell value (transfer price, not gains)
-- **Effective:** 27 March 2026, for the duration of the crypto asset market pilot under Resolution 05/2025/NQ-CP
-- **Taxed legs:** sells only (buys are acquisitions, not transfers)
-- **VAT:** exempt (Art. 3.1)
-
-## Caveats
-
-This is an **estimate, not tax advice**. The 0.1% rate is written for transfers through *licensed* VN crypto asset service providers; Binance may not yet qualify under the pilot, so actual liability may differ. Verify with a VN tax advisor before filing. Pre-27 Mar 2026 sells fall outside the Circular and land in the grey-zone bucket.
+- [Ministry of Finance: Circular 32/2026/TT-BTC](https://www.mof.gov.vn/tin-tuc-tai-chinh/tin-tuc-su-kien-8/bo-tai-chinh-ban-hanh-thong-tu-so-322026tt-btc-ve-chinh-sach-thue-doi-voi-tai-san-ma-hoa)
+- [Government Gazette: Personal Income Tax Law 109/2025/QH15](https://congbao.chinhphu.vn/van-ban/luat-so-109-2025-qh15-468671/61623.htm)
+- [Government portal: Law 64/2025/QH15](https://vanban.chinhphu.vn/?classid=1&docid=213327&pageid=27160)
 
 ## Run locally
 
@@ -26,14 +22,14 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`, paste a CSV or click **Load sample**.
+Open `http://localhost:3000`, then paste a CSV or click **Load sample**.
 
 ## Scripts
 
 - `npm run dev` — Next.js dev server
 - `npm run build` — production build
-- `npm run lint` — eslint
-- `npm run test:tax` — unit tests for the parser and tax engine (`lib/vn-tax`)
+- `npm run lint` — ESLint
+- `npm run test:tax` — parser and tax-engine tests
 
 ## Stack
 

@@ -1,64 +1,31 @@
-// Tờ khai thuế TNCN — mô hình dòng tiền, KHÔNG phải lãi vốn.
-//
-// Thực tế: file CSV P2P (Binance/Remitano) là dòng tiền MUA/BÁN crypto lấy
-// VND. Mỗi dòng là một giao dịch độc lập:
-//   - MUA: chi VND để nhận crypto → dòng tiền RA, không chịu thuế
-//   - BÁN: nhận VND khi bán crypto → dòng tiền VÀO, chịu thuế
-//
-// Không ghép lô FIFO (như chứng khoán) vì P2P không phải đầu tư lãi vốn.
-// Người dùng mua USDT giá 26k rồi bán giá 27k — đó là spread P2P, không phải
-// lãi vốn đầu tư.
-//
-// Thuế áp dụng:
-//   1. Thuế chuyển nhượng 0,1% trên TỔNG doanh thu bán (sau 27/03/2026)
-//   2. Thuế thu nhập khác 10% trên lợi nhuận ròng (doanh thu bán − chi phí mua)
-//      nếu characterize là thu nhập — tính theo năm, trên VND
-//
-// Lợi nhuận ròng = tổng VND bán − tổng VND mua (cùng tài sản, cùng năm).
-// Nếu bán > mua → lãi ròng → chịu thuế 10%.
-// Nếu mua > bán → lỗ → không có thuế thu nhập khác.
-
 import { CIRCULAR_32_EFFECTIVE, PIT_RATE } from "./constants";
 import { CLAUSES, type RegulationClause } from "./regulation";
 import type { ParsedTrade } from "./schema";
 
-export type DeclBucket = "transfer" | "other-income" | "buy";
+export type DeclBucket = "transfer" | "historic-review" | "buy";
 
 export interface DeclarationRow {
   date: Date;
   pair: string;
   side: "BUY" | "SELL";
   gross: number;
-  /** Thuế phải nộp trên giao dịch này (VND). */
   taxOwed: number;
   bucket: DeclBucket;
   clause: RegulationClause;
-  /** Nguồn: "Remitano" hoặc "Binance". */
   source: string;
 }
 
 export interface YearSummary {
   year: number;
-  /** Tổng VND bán (tất cả tài sản). */
   soldVnd: number;
-  /** Tổng VND mua (tất cả tài sản). */
   boughtVnd: number;
-  /** Lợi nhuận ròng = soldVnd - boughtVnd. */
   netVnd: number;
-  /** Tổng VND bán TRƯỚC 27/03/2026 (chịu thuế thu nhập khác). */
   preEffectiveSoldVnd: number;
-  /** Tổng VND mua TRƯỚC 27/03/2026. */
   preEffectiveBoughtVnd: number;
-  /** Lợi nhuận ròng trước 27/03/2026. */
   preEffectiveNetVnd: number;
-  /** Thuế chuyển nhượng 0,1% trên tổng bán TỪ 27/03/2026 (thuế chốt). */
   transferTax: number;
-  /** Thuế thu nhập khác 10% trên lợi nhuận ròng TRƯỚC 27/03/2026 (nếu dương). */
-  otherIncomeTax: number;
-  /** Tổng thuế năm. */
+  historicReviewSoldVnd: number;
   totalTax: number;
-  /** True nếu doanh thu năm ≤ 500 triệu VND (miễn thuế nếu characterize là kinh doanh). */
-  underThreshold: boolean;
 }
 
 export interface AssetFlow {
@@ -72,7 +39,7 @@ export interface DeclarationResult {
   rows: DeclarationRow[];
   totals: {
     transferTax: number;
-    otherIncomeTax: number;
+    historicReviewSoldVnd: number;
     totalTax: number;
     totalSoldVnd: number;
     totalBoughtVnd: number;
@@ -85,168 +52,127 @@ export interface DeclarationResult {
   assetFlows: AssetFlow[];
 }
 
-const OTHER_INCOME_RATE = 0.1;
-/** Threshold miễn thuế hộ kinh doanh: doanh thu ≤ 500 triệu VND/năm. */
-const BIZ_EXEMPTION_THRESHOLD = 500_000_000;
-
 /**
- * Xây tờ khai theo mô hình dòng tiền.
+ * Builds a working record, not a completed tax return.
  *
- * TUÂN THỦ PHÁP LUẬT VN:
- *
- * 1. TỪ 27/03/2026: thuế chuyển nhượng 0,1% trên tổng giá trị bán — thuế CHỐT
- *    (final). Không kê khai thuế thu nhập khác thêm trên phần này (tránh
- *    double-count). Theo Điều 5 Thông tư 32/2026/TT-BTC.
- *
- * 2. TRƯỚC 27/03/2026: thuế thu nhập khác 10% trên lợi nhuận ròng năm
- *    (bán - mua), nếu dương. Tính theo nguyên tắc quyết toán năm.
- *    Nếu characterize là hộ kinh doanh: doanh thu ≤ 500 triệu VND/năm → miễn.
- *
- * 3. KHÔNG tính cả hai loại thuế trên cùng giao dịch — chọn 1 trong 2
- *    theo ngày hiệu lực.
+ * - From 27/03/2026: estimates 0.1% of each sell under Circular 32/2026/TT-BTC.
+ * - Before 27/03/2026: records the sell for review but deliberately assigns no
+ *   tax. No official source found supports auto-filing 0.1% or a 10% fallback.
  */
 export function buildDeclaration(trades: ParsedTrade[]): DeclarationResult {
   const rows: DeclarationRow[] = [];
   const yearAgg = new Map<number, {
     soldVnd: number;
     boughtVnd: number;
-    /** Riêng cho phần trước 27/03/2026 (áp dụng thuế thu nhập khác). */
     preSoldVnd: number;
     preBoughtVnd: number;
   }>();
   const assetMap = new Map<string, { boughtVnd: number; soldVnd: number }>();
 
-  for (const t of trades) {
-    const year = t.date.getUTCFullYear();
+  for (const trade of trades) {
+    const year = trade.date.getUTCFullYear();
     if (!yearAgg.has(year)) yearAgg.set(year, { soldVnd: 0, boughtVnd: 0, preSoldVnd: 0, preBoughtVnd: 0 });
-    const ya = yearAgg.get(year)!;
+    const yearAggregate = yearAgg.get(year)!;
 
-    // Asset flow (group by base asset).
-    if (!assetMap.has(t.base)) assetMap.set(t.base, { boughtVnd: 0, soldVnd: 0 });
-    const af = assetMap.get(t.base)!;
+    if (!assetMap.has(trade.base)) assetMap.set(trade.base, { boughtVnd: 0, soldVnd: 0 });
+    const assetFlow = assetMap.get(trade.base)!;
+    const isPostEffective = trade.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
 
-    const isPostEffective = t.date.getTime() >= CIRCULAR_32_EFFECTIVE.getTime();
-
-    if (t.side === "BUY") {
-      ya.boughtVnd += t.grossValue;
-      if (!isPostEffective) ya.preBoughtVnd += t.grossValue;
-      af.boughtVnd += t.grossValue;
+    if (trade.side === "BUY") {
+      yearAggregate.boughtVnd += trade.grossValue;
+      if (!isPostEffective) yearAggregate.preBoughtVnd += trade.grossValue;
+      assetFlow.boughtVnd += trade.grossValue;
       rows.push({
-        date: t.date,
-        pair: t.pair,
+        date: trade.date,
+        pair: trade.pair,
         side: "BUY",
-        gross: t.grossValue,
+        gross: trade.grossValue,
         taxOwed: 0,
         bucket: "buy",
-        clause: CLAUSES.notTransfer,
-        source: t.source,
+        clause: CLAUSES.rate,
+        source: trade.source,
       });
       continue;
     }
 
-    // SELL — chịu thuế chuyển nhượng 0,1% nếu sau 27/03/2026.
-    ya.soldVnd += t.grossValue;
-    if (!isPostEffective) ya.preSoldVnd += t.grossValue;
-    af.soldVnd += t.grossValue;
-
-    let taxOwed = 0;
-    let bucket: DeclBucket;
-    let clause: RegulationClause;
-
-    if (isPostEffective) {
-      // TỪ 27/03/2026: thuế chuyển nhượng 0,1% trên tổng — THUẾ CHỐT.
-      // Không tính thuế thu nhập khác thêm (tránh double-count).
-      taxOwed = roundCents(t.grossValue * PIT_RATE);
-      bucket = "transfer";
-      clause = CLAUSES.rate;
-    } else {
-      // TRƯỚC 27/03/2026 — thuế thu nhập khác 10% tính theo NĂM.
-      bucket = "other-income";
-      clause = CLAUSES.otherIncome;
-    }
+    yearAggregate.soldVnd += trade.grossValue;
+    assetFlow.soldVnd += trade.grossValue;
+    if (!isPostEffective) yearAggregate.preSoldVnd += trade.grossValue;
 
     rows.push({
-      date: t.date,
-      pair: t.pair,
+      date: trade.date,
+      pair: trade.pair,
       side: "SELL",
-      gross: t.grossValue,
-      taxOwed,
-      bucket,
-      clause,
-      source: t.source,
+      gross: trade.grossValue,
+      taxOwed: isPostEffective ? roundCents(trade.grossValue * PIT_RATE) : 0,
+      bucket: isPostEffective ? "transfer" : "historic-review",
+      clause: isPostEffective ? CLAUSES.rate : CLAUSES.historicUncertainty,
+      source: trade.source,
     });
   }
 
-  // Sort newest-first.
-  rows.sort((a, b) => b.date.getTime() - a.date.getTime());
+  rows.sort((first, second) => second.date.getTime() - first.date.getTime());
 
-  // Year summaries — tách rõ thuế chuyển nhượng (chốt) vs thuế thu nhập khác.
   const yearSummaries: YearSummary[] = [];
-  for (const [year, ya] of yearAgg) {
-    const netVnd = ya.soldVnd - ya.boughtVnd;
-    // Thuế chuyển nhượng 0,1%: chỉ bán TỪ 27/03/2026 — thuế chốt, không thêm.
+  for (const [year, yearAggregate] of yearAgg) {
     const transferTax = rows
-      .filter((r) => r.bucket === "transfer" && r.date.getUTCFullYear() === year)
-      .reduce((s, r) => s + r.taxOwed, 0);
-    // Thuế thu nhập khác 10%: chỉ trên phần TRƯỚC 27/03/2026, lợi nhuận ròng.
-    const preNetVnd = ya.preSoldVnd - ya.preBoughtVnd;
-    // Threshold: nếu doanh thu năm ≤ 500 triệu VND → miễn (characterize hộ kinh doanh).
-    const underThreshold = ya.soldVnd <= BIZ_EXEMPTION_THRESHOLD;
-    // Thuế thu nhập khác chỉ áp dụng nếu:
-    // - Lợi nhuận ròng (trước 27/03/2026) > 0
-    // - VÀ không dưới threshold (nếu characterize là kinh doanh)
-    const otherIncomeTax = preNetVnd > 0 && !underThreshold
-      ? roundCents(preNetVnd * OTHER_INCOME_RATE)
-      : 0;
+      .filter((row) => row.bucket === "transfer" && row.date.getUTCFullYear() === year)
+      .reduce((sum, row) => sum + row.taxOwed, 0);
+    const preEffectiveNetVnd = yearAggregate.preSoldVnd - yearAggregate.preBoughtVnd;
+
     yearSummaries.push({
       year,
-      soldVnd: roundCents(ya.soldVnd),
-      boughtVnd: roundCents(ya.boughtVnd),
-      netVnd: roundCents(netVnd),
-      preEffectiveSoldVnd: roundCents(ya.preSoldVnd),
-      preEffectiveBoughtVnd: roundCents(ya.preBoughtVnd),
-      preEffectiveNetVnd: roundCents(preNetVnd),
-      transferTax,
-      otherIncomeTax,
-      totalTax: roundCents(transferTax + otherIncomeTax),
-      underThreshold,
+      soldVnd: roundCents(yearAggregate.soldVnd),
+      boughtVnd: roundCents(yearAggregate.boughtVnd),
+      netVnd: roundCents(yearAggregate.soldVnd - yearAggregate.boughtVnd),
+      preEffectiveSoldVnd: roundCents(yearAggregate.preSoldVnd),
+      preEffectiveBoughtVnd: roundCents(yearAggregate.preBoughtVnd),
+      preEffectiveNetVnd: roundCents(preEffectiveNetVnd),
+      transferTax: roundCents(transferTax),
+      historicReviewSoldVnd: roundCents(yearAggregate.preSoldVnd),
+      totalTax: roundCents(transferTax),
     });
   }
-  yearSummaries.sort((a, b) => a.year - b.year);
+  yearSummaries.sort((first, second) => first.year - second.year);
 
-  // Asset flows.
   const assetFlows: AssetFlow[] = [...assetMap.entries()]
-    .map(([asset, f]) => ({
+    .map(([asset, flow]) => ({
       asset,
-      boughtVnd: roundCents(f.boughtVnd),
-      soldVnd: roundCents(f.soldVnd),
-      netVnd: roundCents(f.soldVnd - f.boughtVnd),
+      boughtVnd: roundCents(flow.boughtVnd),
+      soldVnd: roundCents(flow.soldVnd),
+      netVnd: roundCents(flow.soldVnd - flow.boughtVnd),
     }))
-    .sort((a, b) => b.soldVnd - a.soldVnd);
+    .sort((first, second) => second.soldVnd - first.soldVnd);
 
-  const allSold = rows.filter((r) => r.side === "SELL");
-  const allBought = rows.filter((r) => r.side === "BUY");
-  const totalSoldVnd = allSold.reduce((s, r) => s + r.gross, 0);
-  const totalBoughtVnd = allBought.reduce((s, r) => s + r.gross, 0);
+  const allSold = rows.filter((row) => row.side === "SELL");
+  const allBought = rows.filter((row) => row.side === "BUY");
+  const totalSoldVnd = allSold.reduce((sum, row) => sum + row.gross, 0);
+  const totalBoughtVnd = allBought.reduce((sum, row) => sum + row.gross, 0);
+  const historicReviewSoldVnd = rows
+    .filter((row) => row.bucket === "historic-review")
+    .reduce((sum, row) => sum + row.gross, 0);
+  const transferTax = rows
+    .filter((row) => row.bucket === "transfer")
+    .reduce((sum, row) => sum + row.taxOwed, 0);
 
   return {
     rows,
     totals: {
-      transferTax: roundCents(allSold.filter((r) => r.bucket === "transfer").reduce((s, r) => s + r.taxOwed, 0)),
-      otherIncomeTax: roundCents(yearSummaries.reduce((s, y) => s + y.otherIncomeTax, 0)),
-      totalTax: roundCents(yearSummaries.reduce((s, y) => s + y.totalTax, 0)),
+      transferTax: roundCents(transferTax),
+      historicReviewSoldVnd: roundCents(historicReviewSoldVnd),
+      totalTax: roundCents(transferTax),
       totalSoldVnd: roundCents(totalSoldVnd),
       totalBoughtVnd: roundCents(totalBoughtVnd),
       totalNetVnd: roundCents(totalSoldVnd - totalBoughtVnd),
       totalBuyCount: allBought.length,
       totalSellCount: allSold.length,
-      unmatchedCount: 0, // mô hình dòng tiền — không có "unmatched"
+      unmatchedCount: 0,
     },
     yearSummaries,
     assetFlows,
   };
 }
 
-function roundCents(n: number): number {
-  return Math.round(n * 100) / 100;
+function roundCents(value: number): number {
+  return Math.round(value * 100) / 100;
 }

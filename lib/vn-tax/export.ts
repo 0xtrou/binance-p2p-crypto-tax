@@ -1,69 +1,71 @@
-// Client-side export helpers for declaration + compliance tables.
-// CSV: hand-rolled (RFC 4180 quoting). XLSX: SheetJS.
-// Both trigger browser downloads via Blob + anchor click.
-
 import * as XLSX from "xlsx";
 import type { DeclarationResult } from "./declaration";
 import type { ParseResult } from "./schema";
-import { classifyTrade } from "./regulation";
+import { classifyTrade, OFFICIAL_SOURCES } from "./regulation";
 import { formatDate } from "./format";
 
-/** Quote a CSV cell per RFC 4180: wrap in quotes if it contains comma, quote,
- *  newline, or leading/trailing whitespace. Escape embedded quotes by doubling. */
-function csvCell(v: string | number): string {
-  const s = String(v);
-  if (/[",\n\r]/.test(s) || /^\s|\s$/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
+function csvCell(value: string | number): string {
+  const stringValue = String(value);
+  if (/[",\n\r]/.test(stringValue) || /^\s|\s$/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
   }
-  return s;
+  return stringValue;
 }
 
 function toCsv(rows: (string | number)[][]): string {
-  return rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
-/** Trigger browser download of a blob with given filename. */
 function download(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
 }
 
-const ts = () => new Date().toISOString().slice(0, 10);
+const timestamp = () => new Date().toISOString().slice(0, 10);
 
-/** Build the declaration rows as a 2D array (header + data) for export. */
-function declarationRows(decl: DeclarationResult): (string | number)[][] {
+const LEGAL_NOTICE_ROWS: (string | number)[][] = [
+  ["LƯU Ý PHÁP LÝ — TỔNG HỢP TỪ CHATGPT VÀ NGUỒN CHÍNH PHỦ"],
+  ["Ngày xuất", new Date().toISOString()],
+  ["Không phải tư vấn pháp lý hoặc hướng dẫn kê khai chính thức."],
+  ["Từ 27/03/2026", "Công cụ ước tính 0,1% trên giá chuyển nhượng từng lần theo Thông tư 32/2026/TT-BTC. Không chờ hướng dẫn thêm chỉ vì chưa có hướng dẫn."],
+  ["2019–26/03/2026", "Không tự áp mức 0,1% hoặc 10%. Không dùng file này làm tờ khai cuối cùng; giữ chứng từ và xin ý kiến bằng văn bản từ cơ quan thuế/cố vấn thuế có giấy phép trước khi kê khai hoặc điều chỉnh."],
+  ["Hồi tố", "Không thấy căn cứ trong các nguồn dưới đây để áp ngược mức Thông tư 32 cho giao dịch trước 27/03/2026."],
+  [],
+  ["NGUỒN CHÍNH PHỦ", "Đường dẫn", "Ghi chú"],
+  ...OFFICIAL_SOURCES.map((source) => [source.title, source.url, source.note]),
+];
+
+function declarationRows(declaration: DeclarationResult): (string | number)[][] {
   const header = ["Ngày", "Nguồn", "Cặp", "Chiều", "Tổng VND", "Nhóm", "Điều khoản", "Thuế giao dịch VND", "Thuế năm VND"];
-  // Map year → total tax for that year (for the "thuế năm" column).
   const yearTaxMap = new Map<number, number>();
-  for (const y of decl.yearSummaries) yearTaxMap.set(y.year, y.totalTax);
+  for (const year of declaration.yearSummaries) yearTaxMap.set(year.year, year.totalTax);
 
-  const data = decl.rows.map((r) => {
-    const yearTax = r.side === "SELL" ? (yearTaxMap.get(r.date.getUTCFullYear()) ?? 0) : 0;
+  const data = declaration.rows.map((row) => {
+    const yearTax = row.side === "SELL" ? (yearTaxMap.get(row.date.getUTCFullYear()) ?? 0) : 0;
     return [
-      formatDate(r.date), r.source, r.pair, r.side, r.gross, r.bucket, r.clause.id,
-      r.taxOwed, yearTax,
+      formatDate(row.date), row.source, row.pair, row.side, row.gross, row.bucket, row.clause.id,
+      row.taxOwed, yearTax,
     ];
   });
-  const totals = ["TỔNG", "", "", "", decl.totals.totalSoldVnd, "", "", decl.totals.totalTax, decl.totals.totalTax];
+  const totals = ["TỔNG", "", "", "", declaration.totals.totalSoldVnd, "", "", declaration.totals.totalTax, declaration.totals.totalTax];
   return [header, ...data, totals];
 }
 
-/** Build compliance (per-trade classification) rows for export. */
 function complianceRows(parsed: ParseResult): (string | number)[][] {
-  const header = ["Ngày", "Nguồn", "Cặp", "Chiều", "Tổng VND", "Phân loại", "Điều khoản", "Lý do", "Thanh toán VND"];
+  const header = ["Ngày", "Nguồn", "Cặp", "Chiều", "Tổng VND", "Phân loại", "Điều khoản", "Lý do", "Thuế suất ước tính"];
   const rows = [...parsed.trades]
-    .sort((a, b) => b.date.getTime() - a.date.getTime())
-    .map((t) => {
-      const c = classifyTrade(t);
+    .sort((first, second) => second.date.getTime() - first.date.getTime())
+    .map((trade) => {
+      const classification = classifyTrade(trade);
       return [
-        formatDate(t.date), t.source, t.pair, t.side, t.grossValue,
-        c.bucket, c.clause.id, c.reason, c.payment,
+        formatDate(trade.date), trade.source, trade.pair, trade.side, trade.grossValue,
+        classification.bucket, classification.clause.id, classification.reason, classification.payment,
       ];
     });
   if (parsed.skipped.length > 0) {
@@ -72,54 +74,49 @@ function complianceRows(parsed: ParseResult): (string | number)[][] {
   return [header, ...rows];
 }
 
-export function exportDeclarationCsv(decl: DeclarationResult): void {
-  const csv = toCsv(declarationRows(decl));
-  download(new Blob([csv], { type: "text/csv;charset=utf-8" }), `pit-declaration-${ts()}.csv`);
-}
-
-export function exportDeclarationXlsx(decl: DeclarationResult): void {
-  const ws = XLSX.utils.aoa_to_sheet(declarationRows(decl));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Tờ khai");
-  // Year summary sheet.
-  const summary: (string | number)[][] = [
+function declarationSummaryRows(declaration: DeclarationResult): (string | number)[][] {
+  return [
     ["Chỉ số", "Giá trị VND"],
-    ["Tổng thuế TNCN", decl.totals.totalTax],
-    ["Thuế chuyển nhượng 0,1%", decl.totals.transferTax],
-    ["Thuế thu nhập khác 10%", decl.totals.otherIncomeTax],
-    ["Tổng bán", decl.totals.totalSoldVnd],
-    ["Tổng mua", decl.totals.totalBoughtVnd],
-    ["Lợi nhuận ròng", decl.totals.totalNetVnd],
+    ["Tổng thuế TNCN ước tính", declaration.totals.totalTax],
+    ["Thuế chuyển nhượng 0,1% (từ 27/03/2026)", declaration.totals.transferTax],
+    ["Giao dịch trước 27/03/2026", "Không tự tính thuế — xem sheet Lưu ý pháp lý"],
+    ["Tổng bán", declaration.totals.totalSoldVnd],
+    ["Tổng mua", declaration.totals.totalBoughtVnd],
+    ["Lợi nhuận ròng", declaration.totals.totalNetVnd],
     [],
     ["Tóm tắt theo năm"],
-    ["Năm", "Tổng mua", "Tổng bán", "Lợi nhuận ròng", "Thuế chuyển nhượng", "Thu nhập khác", "Tổng thuế"],
-    ...decl.yearSummaries.map((y) => [y.year, y.boughtVnd, y.soldVnd, y.netVnd, y.transferTax, y.otherIncomeTax, y.totalTax]),
+    ["Năm", "Tổng mua", "Tổng bán", "Lợi nhuận ròng", "Thuế chuyển nhượng", "Bán trước 27/03/2026", "Tổng thuế ước tính"],
+    ...declaration.yearSummaries.map((year) => [year.year, year.boughtVnd, year.soldVnd, year.netVnd, year.transferTax, year.historicReviewSoldVnd, year.totalTax]),
     [],
     ["Dòng tiền theo tài sản"],
     ["Tài sản", "Tổng mua", "Tổng bán", "Lợi nhuận ròng"],
-    ...decl.assetFlows.map((f) => [f.asset, f.boughtVnd, f.soldVnd, f.netVnd]),
+    ...declaration.assetFlows.map((flow) => [flow.asset, flow.boughtVnd, flow.soldVnd, flow.netVnd]),
   ];
-  const sumWs = XLSX.utils.aoa_to_sheet(summary);
-  XLSX.utils.book_append_sheet(wb, sumWs, "Tóm tắt");
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  download(
-    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `pit-declaration-${ts()}.xlsx`,
-  );
+}
+
+export function exportDeclarationCsv(declaration: DeclarationResult): void {
+  const rows = [...LEGAL_NOTICE_ROWS, [], ...declarationRows(declaration)];
+  download(new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" }), `pit-declaration-${timestamp()}.csv`);
+}
+
+export function exportDeclarationXlsx(declaration: DeclarationResult): void {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(declarationRows(declaration)), "Tờ khai dự thảo");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(declarationSummaryRows(declaration)), "Tóm tắt");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(LEGAL_NOTICE_ROWS), "Lưu ý pháp lý");
+  const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  download(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `pit-declaration-${timestamp()}.xlsx`);
 }
 
 export function exportComplianceCsv(parsed: ParseResult): void {
-  const csv = toCsv(complianceRows(parsed));
-  download(new Blob([csv], { type: "text/csv;charset=utf-8" }), `compliance-breakdown-${ts()}.csv`);
+  const rows = [...LEGAL_NOTICE_ROWS, [], ...complianceRows(parsed)];
+  download(new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" }), `compliance-breakdown-${timestamp()}.csv`);
 }
 
 export function exportComplianceXlsx(parsed: ParseResult): void {
-  const ws = XLSX.utils.aoa_to_sheet(complianceRows(parsed));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Compliance Breakdown");
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  download(
-    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `compliance-breakdown-${ts()}.xlsx`,
-  );
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(complianceRows(parsed)), "Compliance Breakdown");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(LEGAL_NOTICE_ROWS), "Lưu ý pháp lý");
+  const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  download(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `compliance-breakdown-${timestamp()}.xlsx`);
 }

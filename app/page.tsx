@@ -4,7 +4,7 @@ import { VnTaxCalculator } from "@/components/vn-tax-calculator";
 export const metadata: Metadata = {
   title: "VN Crypto Tax Estimator",
   description:
-    "Paste a Binance Order or Trade History CSV and estimate the 0.1% personal income tax due under Vietnam's Circular 32/2026/TT-BTC.",
+    "Create a working record for Vietnam crypto transactions. Estimates 0.1% only for sales from 27 March 2026 and flags earlier sales for professional review.",
   alternates: { canonical: "/" },
 };
 
