@@ -25,6 +25,6 @@ test("classifies a sell on the effective date at 0.1%", () => {
 });
 
 test("retains official source links for the published notice", () => {
-  assert.equal(OFFICIAL_SOURCES.length, 3);
+  assert.ok(OFFICIAL_SOURCES.length >= 5);
   assert.ok(OFFICIAL_SOURCES.every((source) => source.url.startsWith("https://")));
 });

@@ -7,7 +7,7 @@ import { exportComplianceCsv, exportComplianceXlsx, exportDeclarationCsv, export
 import { computeTax } from "@/lib/vn-tax/compute-tax";
 import { formatAmount, formatDate } from "@/lib/vn-tax/format";
 import { parseBinanceCsv } from "@/lib/vn-tax/parse-binance-csv";
-import { classifyTrade, CLAUSES, OFFICIAL_SOURCES } from "@/lib/vn-tax/regulation";
+import { classifyTrade, CLAUSES, LEGAL_NOTICE_ANALYSIS, OFFICIAL_SOURCES } from "@/lib/vn-tax/regulation";
 import { S } from "@/lib/vn-tax/strings";
 
 const STORAGE_KEY = "vn-tax-crypto-sources";
@@ -331,13 +331,17 @@ function LegalNotice() {
   return (
     <aside className="mt-3 border border-[#5b3f16] bg-[#181108] px-4 py-4 text-xs leading-relaxed text-[#ddc083]">
       <p className="mb-2 flex items-center gap-2 font-semibold text-[#f0c97a]">
-        <BookOpen size={14} /> Notice pháp lý — tổng hợp từ ChatGPT và nguồn chính phủ
+        <BookOpen size={14} /> Notice pháp lý đầy đủ — tổng hợp từ ChatGPT và nguồn chính phủ
       </p>
-      <ul className="list-disc space-y-1 pl-4 text-[#c9b17a]">
-        <li><strong className="text-[#f0c97a]">Không nên “cứ đợi”</strong> cho lệnh bán từ 27/03/2026: Thông tư 32 đã có hiệu lực; công cụ chỉ hiển thị ước tính 0,1%, không xác nhận nghĩa vụ cuối cùng.</li>
-        <li><strong className="text-[#f0c97a]">2019–26/03/2026:</strong> không tự kê khai theo mức 0,1% hoặc 10% từ công cụ. Giữ chứng từ và xin ý kiến bằng văn bản trước khi nộp hay điều chỉnh.</li>
-        <li><strong className="text-[#f0c97a]">Không hồi tố tự động:</strong> không thấy căn cứ trong các nguồn dưới đây để áp ngược Thông tư 32 cho giao dịch trước 27/03/2026.</li>
-      </ul>
+      <p className="mb-3 text-[#c9b17a]">Nội dung dưới đây là tổng hợp hỗ trợ bởi ChatGPT, không phải tư vấn pháp lý, văn bản trả lời của cơ quan thuế, hoặc bảo đảm miễn trừ trách nhiệm.</p>
+      <div className="space-y-3">
+        {LEGAL_NOTICE_ANALYSIS.map((item) => (
+          <section key={item.title} className="border-l-2 border-[#8d6430] pl-3">
+            <h2 className="font-semibold text-[#f0c97a]">{item.title}</h2>
+            <p className="mt-1 text-[#c9b17a]">{item.body}</p>
+          </section>
+        ))}
+      </div>
       <p className="mt-3 text-[10px] uppercase tracking-wide text-[#8f7d57]">Nguồn chính phủ</p>
       <ul className="mt-1 space-y-1 text-[11px]">
         {OFFICIAL_SOURCES.map((source) => (

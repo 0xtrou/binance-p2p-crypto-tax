@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import type { DeclarationResult } from "./declaration";
 import type { ParseResult } from "./schema";
-import { classifyTrade, OFFICIAL_SOURCES } from "./regulation";
+import { classifyTrade, LEGAL_NOTICE_ANALYSIS, OFFICIAL_SOURCES } from "./regulation";
 import { formatDate } from "./format";
 
 function csvCell(value: string | number): string {
@@ -33,9 +33,7 @@ const LEGAL_NOTICE_ROWS: (string | number)[][] = [
   ["LƯU Ý PHÁP LÝ — TỔNG HỢP TỪ CHATGPT VÀ NGUỒN CHÍNH PHỦ"],
   ["Ngày xuất", new Date().toISOString()],
   ["Không phải tư vấn pháp lý hoặc hướng dẫn kê khai chính thức."],
-  ["Từ 27/03/2026", "Công cụ ước tính 0,1% trên giá chuyển nhượng từng lần theo Thông tư 32/2026/TT-BTC. Không chờ hướng dẫn thêm chỉ vì chưa có hướng dẫn."],
-  ["2019–26/03/2026", "Không tự áp mức 0,1% hoặc 10%. Không dùng file này làm tờ khai cuối cùng; giữ chứng từ và xin ý kiến bằng văn bản từ cơ quan thuế/cố vấn thuế có giấy phép trước khi kê khai hoặc điều chỉnh."],
-  ["Hồi tố", "Không thấy căn cứ trong các nguồn dưới đây để áp ngược mức Thông tư 32 cho giao dịch trước 27/03/2026."],
+  ...LEGAL_NOTICE_ANALYSIS.map((item) => [item.title, item.body]),
   [],
   ["NGUỒN CHÍNH PHỦ", "Đường dẫn", "Ghi chú"],
   ...OFFICIAL_SOURCES.map((source) => [source.title, source.url, source.note]),

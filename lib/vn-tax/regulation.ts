@@ -24,6 +24,43 @@ export const OFFICIAL_SOURCES = [
     url: "https://vanban.chinhphu.vn/?classid=1&docid=213327&pageid=27160",
     note: "Nguyên tắc áp dụng hồi tố của văn bản quy phạm pháp luật.",
   },
+  {
+    title: "Cổng thông tin Chính phủ: Luật Quản lý thuế số 38/2019/QH14",
+    url: "https://vanban.chinhphu.vn/?docid=197312&lang=vi&pageid=27160",
+    note: "Quy định về khai bổ sung hồ sơ khai thuế.",
+  },
+  {
+    title: "Công báo Chính phủ: Văn bản hợp nhất Bộ luật Hình sự số 11/VBHN-VPQH",
+    url: "https://congbao.chinhphu.vn/van-ban/van-ban-hop-nhat-so-11-vbhn-vpqh-44425/55402.htm",
+    note: "Bao gồm Điều 200 về tội trốn thuế.",
+  },
+] as const;
+
+export const LEGAL_NOTICE_ANALYSIS = [
+  {
+    title: "Kết luận thực hành",
+    body: "Không nên “cứ đợi” đối với lệnh bán từ 27/03/2026 chỉ vì nghĩ chưa có hướng dẫn: Thông tư 32 đã có hiệu lực. Nhưng công cụ vẫn chỉ tạo ước tính, không xác nhận nghĩa vụ hoặc cách kê khai cuối cùng cho từng hồ sơ.",
+  },
+  {
+    title: "Mốc pháp lý hiện hành",
+    body: "Thông tư 32/2026/TT-BTC được Bộ Tài chính ban hành ngày 27/03/2026: cá nhân chuyển nhượng tài sản mã hóa chịu TNCN 0,1% trên giá chuyển nhượng từng lần. Luật Thuế TNCN số 109/2025/QH15 có hiệu lực từ 01/07/2026.",
+  },
+  {
+    title: "Giao dịch 2019–26/03/2026",
+    body: "Không có cơ chế TNCN chuyên biệt, rõ ràng tương đương Thông tư 32 trong các nguồn được rà soát. Không tự dùng mức 0,1% hoặc 10% của công cụ làm căn cứ kê khai giai đoạn này. Lưu CSV, sao kê, lịch sử ví, chứng từ nạp/rút và nguồn tiền; xin ý kiến bằng văn bản của cơ quan thuế hoặc cố vấn thuế có giấy phép trước khi nộp hay điều chỉnh.",
+  },
+  {
+    title: "Không tự giả định hồi tố",
+    body: "Quy định thuế mới không tự động áp ngược cho giao dịch cũ. Hồi tố phải có căn cứ được quy định rõ và bị giới hạn theo Luật Ban hành văn bản quy phạm pháp luật. Không thấy căn cứ trong các nguồn liên kết để áp mức Thông tư 32 ngược cho giao dịch trước 27/03/2026.",
+  },
+  {
+    title: "Kê khai sai và rủi ro hình sự",
+    body: "Kê khai sai mục hoặc cách phân loại không tự động là tội trốn thuế. Rủi ro hình sự chỉ được xem xét khi hành vi và các điều kiện của Điều 200 Bộ luật Hình sự được thỏa mãn. Luật Quản lý thuế có cơ chế khai bổ sung; nghĩa vụ thuế, tiền chậm nộp hoặc xử phạt (nếu có) phụ thuộc hồ sơ, thời điểm và kết quả xử lý của cơ quan có thẩm quyền.",
+  },
+  {
+    title: "Cách dùng công cụ an toàn",
+    body: "File xuất chỉ là hồ sơ giao dịch/dự thảo làm việc. Với lệnh bán từ 27/03/2026, công cụ ước tính 0,1% trên tổng giá trị bán. Với lệnh bán trước ngày đó, công cụ chỉ gắn nhãn “cần xác nhận” và không tự tính thuế. Không nộp file xuất trực tiếp như tờ khai cuối cùng.",
+  },
 ] as const;
 
 export const CLAUSES = {
